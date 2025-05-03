@@ -1,0 +1,199 @@
+---
+title: "A7 Time Series"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# library
+library(tidyverse)
+# lubridate 1.9.3 now included in tidyverse 2.0.0
+library(PNWColors)
+```
+
+```{r}
+# color palettes
+## save color palette, depending on number of observations (n)
+### if using a continuous scale, can have n much higher than # observations
+pal1 <- pnw_palette("Sunset2", n = 399)
+pal2 <- pnw_palette("Starfish", n = 4)
+# view color palette:
+#pal1
+# see name options for palette generation:
+names(pnw_palettes)
+```
+
+
+# Weather Data
+
+These data consist of monthly weather data from the Bellingham airport weather station from January 2000 to present. 
+
+```{r}
+# load weather data (RDS file)
+## using an easier variable name since I am only working with one dataset
+weather <- readRDS("kbliMonthlyTempPrcp.rds")
+head(weather)
+str(weather)
+class(weather$DATE)
+```
+
+## Pull Year and Month
+
+```{r}
+weather <- weather %>%
+  mutate(YEAR = year(DATE),
+         MONTH = month(DATE))
+head(weather)
+```
+
+## Pull Month Name
+```{r}
+weather <- weather %>%
+  mutate(MONTHNAME = month(DATE, label = TRUE))
+head(weather)
+```
+
+## Pivoting
+```{r}
+weather_long <- weather %>%
+  select(DATE, TEMP, PRCP) %>%
+  pivot_longer(cols = c(TEMP, PRCP))
+```
+
+## Aggregating Data
+```{r}
+weather_AnnualTemp <- weather %>%
+  filter(YEAR < 2024) %>%
+  group_by(YEAR) %>%
+  summarize(TEMP = mean(TEMP))
+head(weather_AnnualTemp)
+```
+
+# Plot 1: Average Annual Summer Temperatures
+
+## Data Wrangling
+
+```{r}
+AvgSummerTemp <- weather %>%
+  # filter for summer months: June (6), July (7), and August (8)
+  filter(MONTH %in% 6:8) %>%
+  # group by year to take summer averages
+  group_by(YEAR) %>%
+  # summarize each year using mean() 
+  summarize(TEMP = mean(TEMP)) %>%
+  # choose only columns of interest for this plot 
+  select(YEAR, TEMP)
+```
+
+## Plot
+
+```{r}
+plot_AvgSummerTemp <- ggplot(data = AvgSummerTemp) +
+    ## data was reordered so that the color attributes would align
+  # add connecting line, colored by same palette
+  geom_line(aes(x = YEAR, y = TEMP, color = TEMP)) +
+  # add points for each year, colored by temp
+  geom_point(aes(x = YEAR, y = TEMP, color = TEMP)) +
+  # change axis labels
+  ## use \u00b0 in character string to get degree symbol
+  # change color palette
+  scale_color_gradientn(colors = pal1) +
+  labs(x = "Year", y = "Temperature (\u00b0C)",
+       title = "Average Summer Temperature (\u00b0C)",
+       subtitle = "2000 - 2024 | Bellingham International Airport Weather Station") +
+  # change legend title
+  ## use \n to add linebreak to character string
+  guides(color = guide_legend(title =  "Temp \n (\u00b0C)")) +
+  # center plot title and subtitle
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+plot_AvgSummerTemp
+```
+
+Fig 1: Average summer temperature recorded at Bellingham International Airport's weather station from 2000 to 2024. Temperatures were averaged across June, July, and August for each year.
+
+
+# Plot 2: Cumulative Precipitation by Year
+
+## Data Wrangling
+
+```{r}
+CumPrcp <- weather %>%
+  # select only Year and Precipitation columns
+  select(YEAR, PRCP) %>%
+  # group by year 
+  group_by(YEAR) %>%
+  # warnings said to use reframe instead of summarize - not entirely sure why, since CumPrcp has the same number of rows as weather
+  # cumsum() creates a vector that is the cumulative sum of the values
+  reframe(sumPRCP = cumsum(PRCP)) %>%
+  # add month back into the dataframe
+  add_column(MONTH = weather$MONTH,
+             DATE = weather$DATE) %>%
+  # add quarter column for seasons
+  mutate(SEASON = as.factor(quarter(DATE)))
+
+# create reference dataframe to add Season Names to DF
+seasons <- tibble(data.frame(NAME = c("Winter", "Spring", "Summer", "Fall"),
+                             SEASON = as.factor(1:4)))
+
+# join DF with seasons reference dataframe
+CumPrcp <- CumPrcp %>%
+  inner_join(seasons, by = join_by("SEASON"))
+  
+
+# create separate dataframe that includes only the final month of each year
+CumPrcpSeasons <- CumPrcp %>%
+  group_by(YEAR, SEASON) %>%
+  filter(sumPRCP == max(sumPRCP))
+```
+
+## Plot
+
+```{r}
+plot_CumPrcp <- ggplot() +
+  # create lines for cumulative precipitation, grouped by year
+  ## data was reordered so that the color attributes would align
+  geom_path(data = CumPrcp[order(CumPrcp$YEAR, rev(CumPrcp$DATE)), ],
+            aes(x = DATE, y = sumPRCP, group = YEAR, color = NAME),
+            linewidth = 1) +
+  # create connecting lines to show precip at the end of each season by year
+  geom_path(data = CumPrcpSeasons,
+            aes(x = DATE, y = sumPRCP, group = SEASON, color = NAME), 
+            linewidth = 1, alpha = 0.5) +
+  # modify x-axis breaks, labels, and margin
+  scale_x_date(date_breaks = "2 year", date_labels = "%Y", 
+               name = "Year", expand = c(0,400)) +
+  # use custom palette, reorder season names in legend
+  scale_color_manual(values = (pal2), 
+                     breaks = c("Fall", "Summer", "Spring", "Winter")) +
+  # relabel y-axis and titles
+  labs(y = "Precipitation (mm)",
+       title = "Cumulative Annual Precipitation",
+       subtitle = "2000 - 2024 | Bellingham International Airport Weather Station") +
+  # center titles
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5)) 
+
+plot_CumPrcp
+```
+
+Fig. 2: Cumulative Annual Precipitation at Bellingham International Airport's weather station, 2000 to 2024. Colors indicate season. Horizontal lines show the cumulative precipitation at the end of each season across all years.
+
+# Reflection
+
+The biggest trouble I had in this assignment was getting the colors for geom_path to align correctly with the end of the season, instead of the second-to-last datapoint for each season. I found a reorder method that I used in the data call for the second plot, but despite knowing what that reorder did, I still don't quite fully grasp why it worked. 
+
+

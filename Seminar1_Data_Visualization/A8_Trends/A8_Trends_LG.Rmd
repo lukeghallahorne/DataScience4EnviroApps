@@ -1,0 +1,181 @@
+---
+title: "Assignment 8 - Trends Visualization"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, error = FALSE}
+# always load tidyverse :)
+library(tidyverse)
+# pretty colors
+library(PNWColors)
+```
+
+# Why is this plot bad?
+
+```{r}
+foo <- anscombe %>% 
+  dplyr::select(x4,y4) %>% 
+  mutate(x4=jitter(x4,factor=0.1)) %>% 
+  rename(y=y4,x=x4) 
+
+foo %>% ggplot(mapping = aes(x,y)) + geom_smooth(se = FALSE)
+
+foo %>% ggplot(mapping = aes(x,y)) + geom_smooth(method="lm",se = FALSE)
+
+```
+
+These plots are great examples of how misleading smoothing can be if it is not done appropriately. For both plots, there are no variable names or units, so from the get-go we don't know what we're looking at. The original data are not plotted in addition to the trendlines, nor are there error bars or any other indication of how well the smoothing fit the original data. It is evident from the wild differences between the two that at least one of the models is a very poor fit, but we don't know anything about the actual data. In the very, very least, we need some  error or data points for this plot to make any sense.
+
+```{r}
+foo %>% ggplot(aes(x, y)) + 
+  geom_smooth(linewidth = 0.5) +
+  geom_smooth(method = "lm", linewidth = 0.5, color = "coral2") +
+  geom_point()
+```
+
+We can see now that the weird trends and massive differences between the two smoothing methods were caused by a single outlier - one value of x is over 2x all other x values. Hence, neither model is really all that informative for the data.
+
+Note: When I originally ran this code copied from the assignment, my trendline plots were the same as yours. However, when I knitted it, the loess smooth line flipped, and now renders that way every time. Not sure what changed...
+
+# Load Paleoclimate Data
+
+```{r}
+temps <- read.csv("3Proxies.csv")
+summary(temps)
+head(temps)
+str(temps)
+```
+
+# Smoothing Methods {.tabset}
+
+## Loess {.tabset}
+
+### Span = 1
+```{r}
+# basic plot to look at data
+p1.1 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              method = "loess",
+              span = 1)
+p1.1
+```
+
+### Span = 0.5
+```{r}
+# basic plot to look at data
+p1.2 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              method = "loess",
+              span = 0.5)
+p1.2
+```
+
+### Span = 0.25
+```{r}
+# basic plot to look at data
+p1.3 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              method = "loess",
+              span = 0.25)
+p1.3
+```
+
+### Span = 0.1
+```{r}
+# basic plot to look at data
+p1.4 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              method = "loess",
+              span = 0.1)
+p1.4
+```
+
+## GAM
+
+```{r}
+p2 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              method = "gam")
+p2
+```
+
+## GLM
+
+```{r}
+p3 <- ggplot(data = temps, aes(x = -kya, y = C)) +
+  geom_path(aes(group = Proxy, color = Proxy), alpha = 0.5) +
+  geom_smooth(aes(group = Proxy, color = Proxy), 
+              formula = y ~ x, 
+              method = "glm") 
+p3
+```
+
+# {.unnumbered .unlisted}
+
+I played around with a few different methods, mainly a Generalized Additive Model (GAM) and different spans for the loess model. I decided on a loess model with a span of 0.25 because it highlights the overall trends as well as the Younger Dryas approximately 12,000 years ago, but is not overfit like a span of 0.1. For my final plot, I also included a linear model to better show the overall warming trends for each of the three proxies.
+
+# Final Plot
+
+
+```{r}
+# sample palette to pull specific colors from
+pal1 <- pnw_palette("Bay", n = 2191)
+# used pal1[i] to pull hex-codes for specific colors, combined here
+pal2 <- c("#E69B99", "#73AA77", "#238C97")
+
+proxy_plot <- ggplot(data = temps, aes(x = -kya, y = C, group = Proxy)) +
+  # original data - important to show how well trends fit
+  geom_path(aes(color = Proxy), alpha = 0.75) +
+  # violin density plots, oriented at the far right of the plot
+  geom_violin(aes(x = 0.5, fill = Proxy, color = Proxy)) +
+  # loess smoothed trendline 
+  geom_smooth(aes(color = Proxy), formula = y ~ x,
+              method = "loess", span = 0.25, se = FALSE,
+              linewidth = 0.75) +
+  # linear model trendline
+  geom_smooth(method = "glm", formula = y ~ x, se = FALSE,
+              color = "darkgrey", alpha = 0.75, linewidth = 0.5) +
+  # change color and fill palettes, rearranging by breaks
+  scale_color_manual(values = pal2, 
+                     breaks = c("Cariaco Basin", "Greenland", "Antarctica")) +
+  scale_fill_manual(values = pal2, 
+                    breaks = c("Cariaco Basin", "Greenland", "Antarctica")) +
+  # axis and title labels
+  labs(x = "Thousands of Years Ago",
+       y = "Average Annual Temperature (\u00B0C)",
+       title = "Paleoclimate Proxies for Average Annual Temperature",
+       subtitle = "20,000 Years Ago to Pre-Industrialization") +
+  # theme options
+  theme_classic() +
+  theme(legend.position = "bottom",
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        legend.title = element_blank()) 
+
+proxy_plot
+```
+
+
+
+
+
+

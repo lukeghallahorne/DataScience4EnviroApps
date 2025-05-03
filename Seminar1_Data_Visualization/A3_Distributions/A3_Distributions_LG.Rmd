@@ -1,0 +1,146 @@
+---
+title: "A3 - Penguin Distributions"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 6
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning=FALSE}
+library(tidyverse)
+library(palmerpenguins)
+library(ggiraph)
+# interactive plot package; thanks to Ellie Ryan for showing me this!
+library(PNWColors)
+# great color palette package by Jake Lawlor
+```
+
+```{r}
+# create color palette for use in plots
+pal1 <- pnw_palette("Lake", n = 2)
+```
+
+
+```{r}
+# look at structure of data
+## first few rows
+head(penguins)
+## variables and their classes
+str(penguins)
+```
+
+After looking through the numerical variables in the Palmer penguins dataset (bill length, bill depth, flipper length, and body mass), I decided to visualize the distribution of bill length mainly because the distributions were normal-ish but had more unique shapes and were more fun to visualize. Also, this was the only metric that separated Adelies from Chinstraps, so it felt a little more interesting. 
+
+```{r}
+penguins_bill <- penguins %>% 
+  # wrangle data to columns of interest
+  select(species, bill_length_mm, island, sex, year) %>%
+  # rename bill_length_mm for convenience
+  rename(bill = bill_length_mm) %>%
+  # remove NAs in bill length and sex
+  drop_na(bill, sex) 
+
+
+```
+
+Adelie penguins occur on all three islands, while Chinstrap and Gentoo penguins each are local to a single island in the dataset. I did not see any major differences in bill length distribution across years or among Adelies across different islands. The biggest difference appears to be within sex, with males typically having a slightly larger bill length. 
+
+# 1 - QQ Plot
+
+```{r}
+# save plot
+penguins_qq <- penguins_bill %>%
+  ggplot(aes(sample = bill, color = sex, shape = sex)) +
+  # adjust color palettes to manual input - use scale_xxx_manual for discrete variables
+  scale_color_manual(values = pal1) +
+  scale_shape_manual(values = c(15, 16)) +
+  # add QQ plot geom (points) and theoretical expectation (line)
+  geom_qq(distribution = qnorm) + geom_qq_line(distribution = qnorm) +
+  # separate plots by species
+  facet_wrap(~species) +
+  labs(x = "Theoretical Quantiles", y = "Bill Length (mm)",
+       title = "QQ Plot of Penguin Bill Length") +
+  theme(plot.title = element_text(hjust = 0.5))
+# print plot
+penguins_qq
+```
+
+Figure 1: Quantile-Quantile plots of Bill Length (mm) for male and female Adelie, Chinstrap, and Gentoo penguins.
+
+The distributions of bill length for three penguin species by sex are all roughly normal, as the majority of points align with the theoretical values of a normal distribution. Most of these distributions do have a few outliers, primarily at the upper end of bill length. One group, female Chinstrap penguins, tail off quite a bit from normal on both extremes.
+
+I tested some other typical probability distributions (log-normal and gamma - I could not get beta distributions to work right nor find how to use the alpha distribution easily), and normal was the best fit for all groups. 
+
+# 2 - Distribution Plots
+
+```{r}
+penguins_dens <- penguins_bill %>%
+  ggplot() +
+  # geom_density to create density functions for bill length by each group
+  geom_density(aes(x = bill, color = sex, fill = sex), alpha = 0.5) +
+  scale_color_manual(values = rev(pal1)) +
+  scale_fill_manual(values = rev(pal1)) +
+  facet_wrap(~species, ncol = 1) +
+  labs(x = "Bill Length (mm)", y = "Density",
+       title = "Density Plot of Penguin Bill Length") +
+  theme(plot.title = element_text(hjust = 0.5))
+penguins_dens
+```
+
+Figure 2: Density distribution plots of bill length (mm) for male and female Adelie, Chinstrap, and Gentoo penguins.
+
+
+```{r}
+penguins_viol <- penguins_bill %>%
+  ggplot() +
+  # violin plots of distributions
+  geom_violin(aes(x = sex, y = bill, color = sex, fill = sex), alpha = 0.25) +
+  # overlaying points for each measurement; adding interactive allows hover-over effects
+    # tooltip adds pop-up with value; data_id changes point color when hovered
+  geom_point_interactive(aes(x = sex, y = bill, color = sex, shape = sex, tooltip = bill, data_id = bill),
+             position = position_jitter(width = 0.2),
+             ) +
+  scale_color_manual(values = pal1) +
+  # add manual point shapes (pch in base plot)
+  scale_shape_manual(values = c(15, 16)) +
+  scale_fill_manual(values = pal1) +
+  facet_wrap(~species, nrow = 1) +
+  labs(x = "Sex", y = "Bill Length (mm)",
+       title = "Violin Plot of Penguin Bill Length") +
+  # remove excess axis labels and ticks
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
+# create interactive ggplot object with girafe() function from ggiraph package
+penguins_viol_int <- girafe(ggobj = penguins_viol, 
+       options = list(
+         # change fill and stroke of points when hovered over
+         opts_hover(css = "fill:lightblue;stroke:black")
+         ))
+# print interactive plot
+penguins_viol_int
+
+```
+
+Figure 3: Violin plots of bill length (mm) distributions for male and female penguins by species. Violin plots show density of points along the range for each group. Points show individual measurements within each group. Hovering over points displays the bill length in millimeters, and highlights other points with an equal value.
+
+
+
+
+
+
+
+
+

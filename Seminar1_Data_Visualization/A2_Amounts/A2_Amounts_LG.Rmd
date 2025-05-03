@@ -1,0 +1,298 @@
+---
+title: "A2 Visualizing Amounts"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:   
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r error = FALSE, message = FALSE}
+# Library
+library(tidyverse)
+# dplyr, ggplot2, etc.
+library(PNWColors)
+# creates nice color palettes
+library(scales)
+# scales package for label_wrap()
+```
+
+```{r}
+# create color palette for plots
+pal1 <- pnw_palette("Starfish", n = 500)
+```
+
+
+
+# Precipitation Data
+
+```{r}
+# Load data
+ppt <- read.csv("meanDivPcp1901-2000.csv")
+```
+
+```{r}
+# examine data
+head(ppt)
+tail(ppt)
+```
+
+## Data Wrangling
+
+*Goal:* to include further description variables to each location for better visualization.
+
+```{r }
+# separate location column into State and ClimateDivision
+ppt <- ppt %>% separate(col = Location,
+                        into = c("State", "ClimateDivision"),
+                        sep = " CD ")
+```
+
+```{r}
+# create df of State Name, Region, Division, Area, and Abbreviations from base R objects
+stateLookup <- tibble(State = state.name,
+                      Region = state.region,
+                      Division = state.division,
+                      Area = state.area,
+                      Abbv = state.abb)
+```
+
+```{r}
+# join dfs by State variable in stateLookup
+ppt <- ppt %>% inner_join(stateLookup, by = join_by(State))
+head(ppt)
+```
+
+# Visualizations {.tabset}
+
+I want to compare the three states in which I have lived: Colorado, Vermont, and Washington. They have rather different climates so I want to examine their average precipitation across climate divisions as well as the number of distinct climate divisions in each. Washington and Colorado are roughly the same size but I expect will differ the most in precipitation, while Vermont is tiny, so will have far less total precipitation but be closer to Washington in average.
+
+
+
+
+## Figure 1: Precipitation
+
+```{r}
+# 3 States precipitation
+ppt_3 <- ppt %>% 
+  # filter for WA, CO, and VT only 
+  filter(State %in% c("Washington", "Colorado", "Vermont")) %>%
+  # rearrange df by State, then by inches (descending)
+  arrange(State, desc(inches))
+
+# save figure
+fig1 <- ggplot(data = ppt_3, aes(x = State, y = inches, fill = inches)) +
+  # create stacked columns by State with grey outline around climate divisions
+  geom_col(position = "stack", color = "grey30") +
+  # apply custom palette
+  scale_fill_gradientn(colors = rev(pal1)) +
+  # center title and subtitle
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) +
+  # change labels
+  labs(x = "State", 
+       y = "Total Precipitation (in.)",
+       title = "Annual Precipitation in CO, VT, and WA",
+       subtitle = "(1901-2000)",
+       # the \n below in text creates a linebreak in ggplot
+       fill = "Precipitation \n(in., Climate \nDivisions)")
+# print figure
+fig1
+```
+
+Figure 1: Average annual precipitation for Colorado, Vermont, and Washington (1901 - 2000). Colored bands represent the annual precipitation in each climate division within a state.
+
+
+## Figure 2: Area
+
+```{r}
+# save new figure - all code the same, except y = Area instead of inches
+fig2 <- ggplot(data = ppt_3, aes(x = State, y = Area, fill = inches)) +
+  geom_col(position = "stack") +
+  geom_col(position = "stack", color = "grey30", alpha = 0) +
+  scale_fill_gradientn(colors = rev(pal1)) +
+  theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5)) +
+  labs(x = "State", 
+       y = "Land Area (square miles)",
+       title = "Annual Precipitation in CO, VT, and WA by Area",
+       subtitle = "(1901-2000)",
+       fill = "Precipitation \n(in., Climate \nDivisions)")
+fig2
+```
+
+Figure 2: Land area and average annual precipitation for Colorado, Vermont, and Washington (1901 - 2000). Colored bands represent the annual precipitation in each climate division within a state.
+
+
+# {.unlisted .unnumbered}
+
+There is no information in the original dataset on how large each climate division is (and I didn't quite want to wrangle with NOAA datasets to find it), so the sizes of the colored bands in Figure 2 do not correspond to areas of climate divisions. Comparing the two plots, I'm a little shocked that Vermont gets more total precipitation than Colorado, despite being immensely smaller.
+
+# All States by Division {.tabset}
+
+So here, I went a little bit overboard trying to visualize the total precipitation across all states by division and region. 
+```{r}
+# rearrange by geographic division, then state (descending), then inches (descending)
+ppt <- ppt %>% 
+  arrange(Division, desc(State), desc(inches))
+
+# create new summary df
+## summarized by state
+## new variables: total inches, average inches, average inches per 1000m, state stats
+## added a few variables to throw into the final plot and see which was more interesting to look at
+ppt_tots <- ppt %>% 
+  group_by(State) %>%
+  summarize(tot_inches = sum(inches), Area = mean(Area)) %>%
+  mutate(avg_inches = tot_inches / Area) %>%
+  mutate(avg_1000m = avg_inches * 1000) %>%
+  inner_join(stateLookup[,c(1:3,5)], by = join_by(State)) %>%
+  arrange(Division, desc(State))
+```
+
+```{r}
+# Here, I create new variables to get the state labels in the right place
+## the base idea is adding the value of the previous label, plus 1/2 the current division's value and 1/2 of the next division's value
+## given that each value depends on the calculation of the previous, I used a few for-loops; there might be a more efficient tidyverse method to get the values that I wanted, but it was a very fast loop and I called that good enough.
+
+# create label vector
+ppt_labs <- vector()
+## this loop uses a growing vector, which is not good practice typically, but it was the easiest option for this circumstance and did not add any significant processing time
+for (i in 1: length(unique(ppt_tots$Division))) { # for each State division
+  foo <- filter(ppt_tots, Division == unique(ppt_tots$Division)[i]) # filter ppt_tots by division
+  bar <- matrix(nrow = nrow(foo), ncol = 1) # create empty matrix for values
+  for (j in 1: nrow(foo)) { # for each Climate Division within the State Division
+    bar[j] <- sum(bar[j-1], 0.5*foo$tot_inches[j-1],  0.5*foo$tot_inches[j])
+    # add previous label's height to 1/2 last CD's tot_inches and 1/2 next CD's tot_inches
+  }
+  ppt_labs <- c(ppt_labs, bar) # add new labels to growing label vector
+}
+ppt_tots$label <- ppt_labs # save labels to ppt_tots dataframe
+
+# repeat the above steps for labels on the Area plot
+ppt_labsA <- vector()
+for (i in 1: length(unique(ppt_tots$Division))) {
+  foo <- filter(ppt_tots, Division == unique(ppt_tots$Division)[i])
+  bar <- matrix(nrow = nrow(foo), ncol = 1)
+  for (j in 1: nrow(foo)) {
+    bar[j] <- sum(bar[j-1], 0.5*foo$Area[j-1],  0.5*foo$Area[j])
+  }
+  ppt_labsA <- c(ppt_labsA, bar)
+}
+ppt_tots$labelA <- ppt_labsA
+
+# this loop divides the total state area by the number of Climate Divisions in that state
+ppt_Area_avg <- vector()
+for(i in 1:length(unique(ppt$State))) { # for each State
+  foo <- filter(ppt, State == unique(ppt$State)[i]) # filter ppt by State
+  bar <- as.vector(rep(foo$Area[1]/nrow(foo), nrow(foo))) # divide total area by number of CD's and repeat for new vector
+  ppt_Area_avg <- c(ppt_Area_avg, bar) # add new values to growing vector
+}
+ppt$Area.avg <- ppt_Area_avg # assign to new column in ppt dataframe
+# use merge() to be specific about where in the dataframe the new column arrives - using $ just adds the new column to the right-hand side
+
+
+```
+
+## Figure 3: Precipitation
+
+```{r fig.height=7, fig.width=10}
+# save plot - starting with empty ggplot() b/c adding multiple layers with different source dataframes
+fig3 <- ggplot() +
+  # stacked bar plot columns by State Division
+  geom_col(data = ppt, aes(x = Division, y = inches, fill = inches),
+           position = "stack", alpha = 0.85) +
+  # apply custom palette
+  scale_fill_gradientn(colors = rev(pal1)) +
+  # stacked bar plot of State total precip by Division
+  ## change border color to State total precip
+  ## will overlay previous barplot (alpha = 0) but show the total precip for the whole state
+  geom_col(data = ppt_tots, 
+           aes(x = Division, y = tot_inches, color = tot_inches), 
+           alpha = 0, linewidth = 1) +
+  # add the same layer but thin black lines, for clarity
+  geom_col(data = ppt_tots, aes(x = Division, y = tot_inches), 
+           color = "gray40", alpha = 0, linewidth = 0.25) +
+  # apply custom palette
+  scale_color_gradientn(colors = rev(pal1)) +
+  # force x-axis labels to wrap after 10 characters (req. scales package)
+  scale_x_discrete(labels = label_wrap(10),
+                #   guide = guide_axis(n.dodge = 2)
+                ## use this to dodge x-axis labels instead of wrapping
+                   ) +
+  # add State abbreviation labels
+  geom_text(data = ppt_tots, aes(x = Division, y = label, label = Abbv), size = 3.5) +
+  # adjust x-axis text size
+  theme(axis.text.x = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5, size = 15),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.title = element_text(size = 14)) +
+  # change labels (/n adds linebreaks to text)
+  labs(x = "US State Division", 
+       y = "Precipitation (in., Geographic Divisions)",
+       title = "Average Annual Precipitation",
+       subtitle = "(1901 - 2000)",
+       fill = "Precipitation \n(in., Climate \nDivisions)",
+       color = "Precipitation \n(in., States)")
+
+fig3
+```
+
+Figure 3: Average annual precipitation in US states, grouped by state division. Colored bars within each state represent annual precipitation across the state's climate divisions. Colored borders around each state express the total precipitation for the entire state. 
+
+## Figure 4: Area
+
+```{r fig.height=7, fig.width=10}
+# copied code from previous plot, but changed y = Area.avg, y = Area, and y = labelA for area plot
+# save plot - starting with empty ggplot() b/c adding multiple layers with different source dataframes
+fig4 <- ggplot() +
+  # stacked bar plot columns by State Division
+  geom_col(data = ppt, aes(x = Division, y = Area.avg, fill = inches),
+           position = "stack", alpha = 0.8) +
+  # apply custom palette
+  scale_fill_gradientn(colors = rev(pal1)) +
+  # stacked bar plot of State total precip by Division
+  ## change border color to State total precip
+  ## will overlay previous barplot (alpha = 0) but show the total precip for the whole state
+  geom_col(data = ppt_tots, 
+           aes(x = Division, y = Area, color = tot_inches), 
+           alpha = 0, linewidth = 1) +
+  # add the same layer but thin black lines, for clarity
+  geom_col(data = ppt_tots, aes(x = Division, y = tot_inches), 
+           color = "gray40", alpha = 0, linewidth = 0.5) +
+  # apply custom palette
+  scale_color_gradientn(colors = rev(pal1)) +
+  # force x-axis labels to wrap after 10 characters (req. scales package)
+  scale_x_discrete(labels = label_wrap(10),
+                #   guide = guide_axis(n.dodge = 2)
+                ## use this to dodge x-axis labels instead of wrapping
+                   ) +
+  # add State abbreviation labels
+  geom_text(data = ppt_tots, aes(x = Division, y = labelA, label = Abbv), size = 3.5) +
+  # adjust x-axis text size
+  theme(axis.text.x = element_text(size = 13),
+        plot.title = element_text(hjust = 0.5, size = 15),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.title = element_text(size = 14)) +
+  # change labels (/n adds linebreaks to text)
+  labs(x = "US State Division", 
+       y = "Land Area (square miles)",
+       title = "Average Annual Precipitation by Area",
+       subtitle = "(1901 - 2000)",
+       fill = "Precipitation \n(in., Climate \nDivisions)",
+       color = "Precipitation \n(in., States)")
+
+fig4
+```
+
+Figure 4: Land area and average annual precipitation for US states by state division. Y-axis depicts the total land area for each division. Colored bands within each state represent annual precipitation for each of the state's climate divisions. Colored borders around each state depict the total precipitation for the entire state.
+
+There is some unwanted overlapping in the labels for New England because the states are so small compared to other divisions. I couldn't get the labels to dodge correctly in the y-direction, so I would need to change the coordinates for the labels manually. Since the precipitation plot (figure 3) feels like the most complete and most informative, however, I didn't go all the way with correcting these labels.
+
+
+

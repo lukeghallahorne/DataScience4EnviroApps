@@ -1,0 +1,277 @@
+---
+title: "Assignment 10 Uncertainty"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(ggridges)
+library(PNWColors)
+```
+
+
+# Load Data
+
+For visualizing uncertainty, I decided to use some of the data I have been producing for my thesis project. (This may end up being a bad idea but since I'm messing with it all the time anyway, I figured, why not?)
+
+Very, very, very briefly, my project is to model the dispersal of Olympia oyster larvae throughout the Salish Sea from a number of restoration sites prioritized by the WA Department of Fish and Wildlife. The tracking model uses oceanographic output from the Salish Sea Model by PNNL, which contains currents and water condition data. A "larva" particle is set at a release location, then is moved horizontally and vertically by currents with a small randomization factor from turbulence. The particles are tracked for 21 days, then filtered by depth and particle size (a separate component of the model) to determine if they reached a potential settlement site. At the moment, I am calculated distance traveled in two ways: total distance along the track, and direct Euclidean distance.
+
+For this visualization, I am looking at 3 swimming behaviors that alter vertical depth, each with 1000 larval releases from a single time (July 4, 2014 at 11pm) from a single release location (a restoration plot in Padilla Bay). I will be comparing sample means of total distance traveled to a potential settlement site for each swimming behavior (neutrally buoyant, ontogenetic, and phototactic). 
+
+```{r}
+# Load data 
+load("PB_477_none_settled_dist.Rdata")
+load("PB_477_onto_settled_dist.Rdata")
+load("PB_477_photo_settled_dist.Rdata")
+```
+
+There are a lot of columns we don't need for this visualization, and it would be nice to have them all in a single dataframe, so I wrangled the columns I needed and removed the rest.
+
+Ultimately I wanted to compare both distance traveled and Euclidean distance, but for the first submission only got to distance traveled (Euclidean was very non-normal).
+
+```{r}
+# pull out only distance columns, and create new column for behavior labels
+PB_dist <- rbind(PB_477_none_set_dist %>%
+                  select(dist_trav, dist_Euc) %>%
+                  add_column(behavior = "none", .before = 1),
+                PB_477_photo_set_dist %>%
+                  select(dist_trav, dist_Euc) %>%
+                  add_column(behavior = "photo", .before = 1),
+                PB_477_onto_set_dist %>%
+                  select(dist_trav, dist_Euc) %>%
+                  add_column(behavior = "onto", .before = 1))
+```
+
+# Assessing Assumptions
+
+## Distance traveled
+
+The method of finding error for these data depends on how they are distributed, so I examined the spread of each with a density plot.
+
+```{r}
+# this is a hasty plot! just to get a look at distributions
+p1 <- ggplot(data = PB_dist) +
+  geom_density(aes(x = dist_trav, group = behavior, fill = behavior), alpha = 0.5)
+p1
+```
+
+I also checked the Q-Q plots to verify, but these look pretty normal to me.
+
+```{r}
+p2 <- ggplot(data = PB_dist) +
+  geom_qq(aes(sample = dist_trav, color = behavior)) +
+  geom_qq_line(aes(sample = dist_trav)) +
+  facet_wrap(~behavior)
+p2
+```
+
+The qq-plots have a fair bit of divergence from the line at both tail ends, making me less confident in the normality of these data. 
+
+Due to the potentially non-normal distribution, especially around the tails, and because I want the practice, I chose to bootstrap samples to get representative means of distance traveled.
+
+# Bootstrapping
+
+```{r}
+# pull values for sampling
+n_values <- PB_dist %>%
+  filter(behavior == "none") %>%
+  select(dist_trav)
+ph_values <- PB_dist %>%
+  filter(behavior == "photo") %>%
+  select(dist_trav)
+o_values <- PB_dist %>%
+  filter(behavior == "onto") %>%
+  select(dist_trav)
+
+# set seed for replicability
+set.seed(42)
+
+# choose number of iterations
+n = 1000
+
+# prep empty list for for_loop
+loop_list <- list()
+
+for(i in 1:1000) {
+  # sample with replacement
+  n_samp <- sample(n_values, size = length(n_values), replace = T)
+  ph_samp <- sample(ph_values, size = length(ph_values), replace = T)
+  o_samp <- sample(o_values, size = length(o_values), replace = T)
+  # means of samples
+  n_samp_est <- mean(n_samp$dist_trav)
+  ph_samp_est <- mean(ph_samp$dist_trav)
+  o_samp_est <- mean(o_samp$dist_trav)
+  # save to list
+  loop_list[[i]] <- tibble(Neutral_Buoyancy = n_samp_est,
+                           Phototactic = ph_samp_est,
+                           Ontogenetic = o_samp_est)
+}
+
+# convert to single df
+PB_boot <- bind_rows(loop_list)
+
+# pivot longer
+PB_bootlong <- PB_boot %>%
+  pivot_longer(cols = everything())
+```
+
+## Preliminary Plot
+```{r}
+ggplot(data = PB_bootlong) +
+  geom_jitter(aes(x = name, y = value, color = name))
+```
+
+## Pull Confidence Intervals
+
+```{r}
+PB_bootCI <- PB_bootlong %>%  group_by(name) %>%
+  summarise(ci80lwr = quantile(value,probs = 0.10),
+            ci80upr = quantile(value,probs = 0.90),
+            ci90lwr = quantile(value,probs = 0.05),
+            ci90upr = quantile(value,probs = 0.95),
+            ci95lwr = quantile(value,probs = 0.025),
+            ci95upr = quantile(value,probs = 0.975),
+            ci99lwr = quantile(value,probs = 0.005),
+            ci99upr = quantile(value,probs = 0.995)
+  )  
+
+PB_bootCI
+```
+
+# Sample-Means Density Plot
+
+I really liked the density plots of the sample means shown in the assignment, especially since I started with density plots. I plan to explore with the hypothetical outcomes and animated figures more, but did not have time before the first submission.
+
+```{r}
+pal1 <- pnw_palette("Lake", n = 100)
+p3 <- ggplot(PB_bootlong, aes(x = value, y = name,
+                              fill = 0.5 - abs(0.5 - after_stat(ecdf)))) +
+  stat_density_ridges(geom = "density_ridges_gradient", calc_ecdf = TRUE, 
+                      alpha = 0.25) +
+  scale_fill_gradientn(colours = pal1, name = "Tail prob") + 
+  labs(x = "Distance traveled (m)",
+       y = "Swimming Behavior")
+p3  
+```
+
+It is hard to say without further statistics whether these means are very distinct, but it certainly doesn't look like it from this figure. However, I think the scale of the distance traveled could be obfuscating some of these trends, since the x-axis ranges from ~ 25000 to 20000m. Nonetheless, we are seeing a general increase in average distance traveled, with neutral buoyancy traveling the least, ontogenetic next, and phototactic larvae traveling the farthest.
+
+I don't love this figure, but I think it is informative and an interesting starting point to what will be further statistical analysis. I would put more effort into beautifying it if I thought it would tell much more of a story. As I have worked on this, I do think Euclidean (as-the-crow-flies) distance might be a better way to assess disperal distance, but I need to re-run this code based on those distances. 
+
+So, I did so briefly below, since it just required a bit of copy and paste:
+# Euclidean Distance
+## Assessing Normality
+```{r}
+# this is a hasty plot! just to get a look at distributions
+p1 <- ggplot(data = PB_dist) +
+  geom_density(aes(x = dist_Euc, group = behavior, fill = behavior), alpha = 0.5)
+p1
+```
+
+I also checked the Q-Q plots to verify, but these look pretty normal to me.
+
+```{r}
+p2 <- ggplot(data = PB_dist) +
+  geom_qq(aes(sample = dist_Euc, color = behavior)) +
+  geom_qq_line(aes(sample = dist_Euc)) +
+  facet_wrap(~behavior)
+p2
+```
+
+Wow these are non-normal. Will have to look into this more soon for sure... Luckily, for our purposes I will just use bootstrapping.
+
+## Bootstrapping
+
+```{r}
+# pull values for sampling
+n_values <- PB_dist %>%
+  filter(behavior == "none") %>%
+  select(dist_Euc)
+ph_values <- PB_dist %>%
+  filter(behavior == "photo") %>%
+  select(dist_Euc)
+o_values <- PB_dist %>%
+  filter(behavior == "onto") %>%
+  select(dist_Euc)
+
+# set seed for replicability
+set.seed(42)
+
+# choose number of iterations
+n = 1000
+
+# prep empty list for for_loop
+loop_list <- list()
+
+for(i in 1:1000) {
+  # sample with replacement
+  n_samp <- sample(n_values, size = length(n_values), replace = T)
+  ph_samp <- sample(ph_values, size = length(ph_values), replace = T)
+  o_samp <- sample(o_values, size = length(o_values), replace = T)
+  # means of samples
+  n_samp_est <- mean(n_samp$dist_Euc)
+  ph_samp_est <- mean(ph_samp$dist_Euc)
+  o_samp_est <- mean(o_samp$dist_Euc)
+  # save to list
+  loop_list[[i]] <- tibble(Neutral_Buoyancy = n_samp_est,
+                           Phototactic = ph_samp_est,
+                           Ontogenetic = o_samp_est)
+}
+
+# convert to single df
+PB_boot <- bind_rows(loop_list)
+
+# pivot longer
+PB_bootlong <- PB_boot %>%
+  pivot_longer(cols = everything())
+```
+
+## Preliminary Plot
+```{r}
+ggplot(data = PB_bootlong) +
+  geom_jitter(aes(x = name, y = value, color = name))
+```
+
+## Pull Confidence Intervals
+
+```{r}
+PB_bootCI <- PB_bootlong %>%  group_by(name) %>%
+  summarise(ci80lwr = quantile(value,probs = 0.10),
+            ci80upr = quantile(value,probs = 0.90),
+            ci90lwr = quantile(value,probs = 0.05),
+            ci90upr = quantile(value,probs = 0.95),
+            ci95lwr = quantile(value,probs = 0.025),
+            ci95upr = quantile(value,probs = 0.975),
+            ci99lwr = quantile(value,probs = 0.005),
+            ci99upr = quantile(value,probs = 0.995)
+  )  
+
+PB_bootCI
+```
+
+# Euclidean Distance Plot
+```{r}
+p4 <- ggplot(PB_bootlong, aes(x = value, y = name,
+                              fill = 0.5 - abs(0.5 - after_stat(ecdf)))) +
+  stat_density_ridges(geom = "density_ridges_gradient", calc_ecdf = TRUE, 
+                      alpha = 0.25) +
+  scale_fill_gradientn(colours = pal1, name = "Tail prob") + 
+  labs(x = "Euclidean Distance (m)",
+       y = "Swimming Behavior")
+p4
+```
+
+This tells a very different story - phototactic are ultimately settling closer to the release location than neutral or ontogenetic larvae, and ontogenetic larvae are settling the furthest. This is a lot clearer in this plot. I am actually quite excited to see this (genuinely one of the first analyses of this kind that I have been able to do thus-far, so that's pretty cool). I will definitely have to investigate this further.
+
