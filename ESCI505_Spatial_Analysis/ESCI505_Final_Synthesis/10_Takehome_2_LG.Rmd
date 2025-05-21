@@ -1,0 +1,1219 @@
+---
+title: "Spatial Take Home Two"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(gstat)
+library(terra)
+library(tidyterra)
+library(ggnewscale)
+library(tmap)
+library(sf)
+library(PNWColors)
+library(fields)
+library(spatstat)
+library(automap)
+library(knitr)
+library(ncf)
+```
+
+```{r functions}
+# function to turn sf to raster
+sf_2_rast <-function(sfObject,variableIndex = 1){
+  # coerce sf to a data.frame
+  dfObject <- data.frame(st_coordinates(sfObject),
+                         z=as.data.frame(sfObject)[,variableIndex])
+  # coerce data.frame to SpatRaster
+  rastObject <- rast(dfObject,crs=crs(sfObject))
+  
+  names(rastObject) <- names(sfObject)[variableIndex]
+  
+  return(rastObject)
+}
+```
+
+
+
+
+# 1. Geostatistics
+
+```{r}
+ozoneGrids_rast <- readRDS("data/ozoneGrids_rast.rds")
+ozoneGrids_sf <- readRDS("data/ozoneGrids_sf.rds")
+ozonePoints_sf <- readRDS("data/ozonePoints_sf.rds")
+caBnd_sf <- readRDS("data/caBnd_sf.rds")
+caBnd_sf
+```
+
+```{r}
+ozoneCoords <- as.data.frame(st_coordinates(ozonePoints_sf))
+ozonePoints_df <- data.frame(ozone = ozonePoints_sf$ozone,
+                             ozoneCoords)
+
+gridCoords <- as.data.frame(st_coordinates(ozoneGrids_sf))
+```
+
+```{r palettes}
+pal1 <- pnw_palette("Lake", n = nrow(ozonePoints_sf))
+pal2 <- pnw_palette("Lake", n = nrow(ozoneGrids_sf))
+```
+
+## 1.1 Map
+
+```{r}
+ggplot() +
+  geom_sf(data = caBnd_sf) +
+  geom_spatraster(data = ozoneGrids_rast, aes(fill = hill)) +
+  scale_fill_gradientn(colors = gray.colors(100,
+                                            start = 0.1,
+                                            end = 0.9), 
+                       guide = "none",
+                       na.value = "transparent") +
+  
+  new_scale_fill() +
+  geom_spatraster(data = ozoneGrids_rast, aes(fill = elev)) +
+  scale_fill_hypso_c(name = "Elevation (m)", 
+                     palette = "colombia_hypso",
+                     alpha = 0.75) +
+  
+  geom_sf(data = ozonePoints_sf, 
+          aes(col = ozone, size = ozone, alpha = 0.7)) +
+  scale_color_gradientn(colors = (pal1),
+                        name = "Ozone (ppb)",
+                        na.value = "transparent") +
+  labs(title = "Ozone Concentrations in California",
+       x = "Longitude", y = "Latitude") +
+  guides(size = "none", alpha = "none") +
+  theme_minimal()
+```
+
+**Figure 1.1a:** Average daily ozone measurements across 345 stations in California, USA. Color in base map denotes elevation. Points represent measurement stations; size and color indicate ozone concentration in parts per billion.
+
+```{r}
+tmap_mode("view")
+tm_shape(ozonePoints_sf) +
+  tm_dots(col = "ozone", palette = pal1,
+          id = "name") 
+```
+
+**Figure 1.1b:** Interactive map of average daily ozone measurements across 345 stations in California, USA. Color of point indicates ozone concentration in parts per billion.
+
+## 1.2 Deterministic: IDW {.tabset}
+
+Inverse distance weighting (IDW) is a deterministic interpolation method that estimates a variable $\hat Z$ at location $s_0$ by the weighting formula:
+$$\hat Z(s_0) =  \frac{\sum_{i=1}^n w(s_i)Z(s_i)} {\sum_{i=1}^n w(s_i)} $$
+where $w(s_i)$ is the weights of measurements at $i$ locations:
+$$ w(s_i) = ||s_i - s_0||^{-p}$$
+
+We can optimize the parameter $p$ by finding the value with the highest $R^2$ and lowest RMSE for a training set of the data.
+
+```{r}
+# test iterations m
+m <- 50
+# number of points n
+n <- nrow(ozonePoints_sf)
+# values of p to test
+powers2try <- seq(0.5,6,by=0.5)
+nPowers <- length(powers2try)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=nPowers,nrow=m)
+rmse <- matrix(0,ncol=nPowers,nrow=m)
+
+set.seed(7)
+for(i in 1:m){
+  # select rows for testData subset
+  rows4test <- sample(x = 1:n,size = n*0.1)
+  # create testData subset
+  testData <- ozonePoints_sf[rows4test,]
+  # create trainData subset
+  trainData <- ozonePoints_sf[-rows4test,]
+  
+  for(j in 1:nPowers){
+    # IDW model with trainData subset
+    idw_model <- gstat(formula=ozone~1, 
+                       locations = trainData,
+                       set=list(idp = powers2try[j]))
+    # test IDW model compared to observed values in testData
+    obs <- testData$ozone
+    # pull predictions from IDW model
+    preds <- predict(idw_model,newdata = testData, debug.level = 0) |>
+      pull(var1.pred)
+    # pull R^2 and RMSE
+    rsq[i,j] <- cor(obs, preds)^2
+    rmse[i,j] <- sqrt(mean((preds - obs)^2))
+  }
+}
+
+
+# get mean rsq and rmse for each power
+skillDF <- data.frame(power = powers2try,
+                      rsq = colMeans(rsq),
+                      rmse = colMeans(rmse)) |>
+  pivot_longer(cols = -power)
+
+```
+
+```{r}
+ggplot(data = skillDF, aes(x = power, y = value)) + 
+  geom_point() +
+  geom_line() +
+  facet_wrap(~name, scales = "free_y") +
+  labs(x="IDW Power",
+       title="10% Data Withheld, 50 Iterations")
+```
+**Figure 1.2a:** Mean RMSE and $R^2$ for cross-validation IDW tests for values of p from 0.5 to 6 at intervals of 0.5. For each value of p, 50 iterations were run with a random 10% of the data withheld for validation. 
+
+Root mean square error (RMSE) decreases dramatically from p = 0.5 to p = 1.5, then begins to increase after p > 2.5. $R^2$ does not reach a peak until p approaches 3, then decreases again. Hence, I selected an optimal value of p = 2.5 for the final IDW interpolation.
+
+```{r}
+idw_ozone <- gstat(formula=ozone~1, 
+                      locations = ozonePoints_sf,
+                      set=list(idp = 3))
+idw_ozone_sf <- predict(idw_ozone, ozoneGrids_sf, debug.level = 0)
+
+# convert to raster
+idw_ozone_rast <- sf_2_rast(idw_ozone_sf)
+idw_ozone_rast
+```
+
+### IDW: p = 2.5
+```{r}
+ggplot() +
+  geom_raster(data = idw_ozone_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Ozone (ppb)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Ozone Concentrations",
+       subtitle = "IDW: p = 2.5",
+       x = "Easting (m)", y = "Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+
+
+```
+
+### IDW: p = 2.5 + Real Points
+
+```{r}
+ggplot() +
+  geom_raster(data = idw_ozone_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  geom_sf(data = ozonePoints_sf, aes(fill = ozone), color = "white",
+          shape = 21, alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Ozone (ppb)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Ozone Concentrations",
+       subtitle = "IDW: p = 2.5",
+       x = "Longitude", y = "Latitude") +
+  scale_size(guide = "none") +
+  coord_sf() +
+  theme_minimal()
+```
+
+## 
+**Figure 1.2b:** Modeled ozone concentrations across California, USA. Inverse distance weighting (IDW) interpolation using measurements from 345 stations (see points on second figure). A value of p = 2.5 for the weights matrix was selected based on optimized $R^2$ and RMSE values ($R^2$ = 0.44, RMSE = 8.12). 
+
+There is some smoothness in the IDW surface, particularly where ozone concentrations are low and not particularly variable. Where measurements spike, the surrounding surface is slightly pock-marked, suggesting the IDW model could be improved upon (though the nature of ozone production might mean those craters are, in fact, significant). However, IDW is a deterministic method of interpolation, so there is no probability distribution associated with these values and no margin of confidence.
+
+## 1.3 Deterministic: TPS {.tabset}
+Thin-plate splines is an alternative to IDW that is still deterministic, but uses repeated splines to approximate values at unknown locations. 
+
+
+```{r}
+ozone_TPSmodel <- Tps(x = ozonePoints_df[,2:3], Y = ozonePoints_df[,1])
+ozone_TPSmodel
+
+# Predict TPS model over ozoneGrid
+ozone_TPSpreds <- c(predict(object=ozone_TPSmodel, x = gridCoords))
+# store in a data.frame with the x,y coordinates
+ozone_TPS <- data.frame(x = gridCoords[,1],
+                         y = gridCoords[,2],
+                         ozone = ozone_TPSpreds)
+# convert to Raster with SpatStat
+ozone_TPSrast <- rast(ozone_TPS,
+                      crs = crs(ozonePoints_sf))
+ozone_TPSrast
+```
+
+### TPS
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozone_TPSrast, aes(fill = ozone), alpha = 0.9) +
+  scale_fill_gradientn(colors = pal1,
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  labs(title = "TPS-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal()
+```
+
+### TPS + Real Points
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozone_TPSrast, aes(fill = ozone), alpha = 0.9) +
+  scale_fill_gradientn(colors = pal1,
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  labs(title = "TPS-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  theme_minimal() +
+  geom_sf(data = ozonePoints_sf, aes(fill = ozone), color = "white",
+          shape = 21, alpha = 0.8) 
+```
+
+## 
+**Figure 1.3a:** Ozone concentrations modeled with Thin-Plate Splines (TPS). Cross-validation mean $R^2$ = 0.52, RMSE = 7.18. Points (in second figure) show empirical measurements from 345 stations.
+
+The TPS model does not predict the observed values at known locations as accurately as the IDW model did ($R^2$ = 0.751, RMSE = 5.347) but does produce a lower average RMSE (7.18) and higher average $R^2$ (0.52) in cross-validation tests than IDW. The TPS model is a smoother surface than the IDW, spreading out the craters around more extreme points. This may or may not be a more accurate prediction, depending on the nature of ozone production in those locations. However, the second figure highlights how the TPS model underpredicts high ozone concentrations (see scale differences).
+
+
+## 1.4 Probabilistic: Kriging {.tabset}
+
+Kriging is a probabilistic method of interpolation: it uses a variogram model based on experimental semivariance values to predict values of $\hat Z$ at unknown locations.
+
+```{r}
+# using autofitVariogram() to produce experimental and fitted variogram
+## tests Gaussian, Spherical, and Exponential fits and produces the best
+ozone_KrigeVar <- autofitVariogram(ozonePoints_sf$ozone~1,
+                                input_data = ozonePoints_sf, 
+                                model = c("Gau", "Sph", "Exp"))
+plot(ozone_KrigeVar)
+```
+**Figure 1.4a:** Variogram of ozone concentrations.
+
+The best-fit variogram uses a spherical model with nugget = 24, sill = 102, and range = 100611.
+
+```{r}
+# Cross Validation of Krige variogram
+# observational variogram
+ozone_var <- variogram(ozone~1, ozonePoints_sf)
+# Variogram model
+ozone_Krigemod <- vgm(psill = 103, model = "Sph", range = 100611, nugget = 24)
+# fit variogram model
+ozone_fit <- fit.variogram(object = ozone_var, model = ozone_Krigemod)
+
+
+```
+
+
+
+```{r}
+# observational variogram
+ozone_var <- variogram(ozone~1, ozonePoints_sf)
+# Variogram model
+ozone_Krigemod <- vgm(psill = 103, model = "Sph", range = 100611, nugget = 24)
+# fit variogram model
+ozone_fit <- fit.variogram(object = ozone_var, model = ozone_Krigemod)
+
+ozone_Gstat <- gstat(formula = ozone~1, locations = ozonePoints_sf, 
+                   model = ozone_fit)
+ozoneKrige_sf <- predict(ozone_Gstat, newdata = ozoneGrids_sf)
+ozoneKrige_sf
+
+ozoneKrige_rast <- sf_2_rast(ozoneKrige_sf)
+ozoneKrige_rast
+```
+
+### Kriging
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozoneKrige_rast, aes(fill = var1.pred), 
+                    alpha = 0.9) +
+  labs(title = "Kriging-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  theme_minimal()
+```
+
+### Kriging + Real Points
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozoneKrige_rast, aes(fill = var1.pred), 
+                    alpha = 0.9) +
+  labs(title = "Kriging-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  theme_minimal() +
+  geom_sf(data = ozonePoints_sf, aes(fill = ozone), color = "white",
+          shape = 21, alpha = 0.8) 
+```
+
+## 
+
+**Figure 1.4b:** Ozone Concentrations modeled with ordinary kriging. K-fold cross-validation mean $R^2$ = 0.52, average RMSE = 7.20, with k = 10. Second figure shows empirical measurements from 345 stations.
+
+The kriging surface blends the better features of both the TPS model and the IDW model. Changes across smaller distances that were craters in the IDW model are smoother but still present after kriging, while not being overly smooth like the TPS model. Looking back at the original map (which includes elevation), there appears to be some coincidence of high ozone levels and higher elevation.
+
+The fit of the kriged surface and of the TPS model are strikingly similar after cross validation, though kriging slightly more accurately predicts values at known locations ($R^2$ = 0.82 vs 0.75 in TPS model). 
+
+
+## 1.5 Probabilistic: Regression Kriging
+
+Regression kriging uses a variogram model to inform a linear model of a predictor variable and our variable of interest, incorporation spatial structure and improving upon the base model.
+
+```{r}
+Variable <- names(ozonePoints_sf)
+Units <- c("ppb", "m", "radians", rep("unitless", 5))
+Description <- c("Average Daily Ozone 1980-1999",
+                 "Elevation",
+                 "Slope",
+                 "Solar radiation",
+                 "Night lights density",
+                 "Traffic density",
+                 "Tree density",
+                 "Hillshade")
+Source <- c("California Air Resources Board",
+            "USGS National Elevation Dataset",
+            rep("Derived from Elevation", 2),
+            "NASA",
+            "California Office of Env Health",
+            "NASA",
+            "Derived from Elevation")
+
+
+ozone_vars <- data.frame(Variable = Variable[1:8],
+                         Units = Units, Description = Description,
+                         Source = Source)
+kable(ozone_vars, "simple")
+```
+
+Of the predictor variables available, three stand out as most likely to influence ozone concentration: traffic, elevation, and solar radiation. Traffic and urban areas produce more $NO_x$ pollutants that react with sunlight to produce ozone ($O_3$). Elevation increases exposure to solar radiation, and is in fact how the radiation metric was derived. I set a base model with elevation, radiation, and traffic density as predictors, then assessed their influence with ANOVA before proceeding to Regression Kriging.
+
+
+### 
+
+```{r}
+# linear model (OLS) with no spatial consideration (yet)
+ozone_lm <- lm(ozone ~ elev + rad + traffic, data = ozonePoints_sf)
+summary(ozone_lm)
+anova(ozone_lm)
+```
+
+```{r}
+kable(anova(ozone_lm))
+```
+
+
+Elevation is a good predictor of ozone concentration ($F_{1,341}$ = 118.4, p < 0.001), but solar radiation is, in fact, a poor predictor ($F_{1,341}$ = 0.009, p = 0.92). Traffic density, however, is still a signficant predictor, even with an alpha corrected for multiple comparisons ($F_{1,341}$ = 8.65, p < 0.0035).
+
+I reduced the model to include only signficant predictors: elevation and traffic density.
+
+```{r}
+# linear model (OLS) with no spatial consideration (yet)
+ozone_lm <- lm(ozone ~ elev + traffic, data = ozonePoints_sf)
+summary(ozone_lm)
+anova(ozone_lm)
+```
+
+Per the variogram in section 1.4 (reproduced below), there is spatial autocorrelation in ozone concentrations. Furthermore, there is spatial autocorrelation in the residuals of the regression model, so this model could be improved by including spatial structure with kriging.
+
+```{r}
+ozone_KrigeVar <- autofitVariogram(ozonePoints_sf$ozone~1,
+                                input_data = ozonePoints_sf, 
+                                model = c("Gau", "Sph", "Exp"))
+plot(ozone_KrigeVar)
+```
+
+
+```{r}
+# observational variogram
+ozone_var <- variogram(ozone~1, ozonePoints_sf)
+
+# Set up gstat object with regression model
+ozone_KRGstat <- gstat(id = "ozone_KRmodel",
+                       formula = ozone~elev + traffic,
+                       data = ozonePoints_sf)
+
+# variogram of model residuals
+ozone_KRvar <- variogram(ozone_KRGstat)
+plot(ozone_KRvar, pch=20, cex=1.5, col="black",
+     ylab=expression("Semivariance ("*gamma*")"),
+     xlab="Distance (m)", main = "Model Residuals")
+
+
+```
+
+### Variogram Models {.tabset}
+
+#### Spherical
+```{r}
+# fit variogram model
+ozone_KRfit_Sph <- fit.variogram(ozone_KRvar, 
+                                 vgm(psill = 70, 
+                                     model = "Sph", 
+                                     range = 100000, 
+                                     nugget = 40))
+ozone_KRfit_Sph
+
+plot(ozone_KRvar, ozone_KRfit_Sph,
+     pch=20, cex=1.5, col="black",
+     ylab=expression("Semivariance ("*gamma*")"),
+     xlab="Distance (m)", main = "Model Residuals")
+```
+
+#### Gaussian
+```{r}
+# fit variogram model
+ozone_KRfit_Gau <- fit.variogram(ozone_KRvar, 
+                                 vgm(psill = 70, 
+                                     model = "Gau", 
+                                     range = 100000, 
+                                     nugget = 40))
+ozone_KRfit_Gau
+
+plot(ozone_KRvar, ozone_KRfit_Gau,
+     pch=20, cex=1.5, col="black",
+     ylab=expression("Semivariance ("*gamma*")"),
+     xlab="Distance (m)", main = "Model Residuals")
+```
+
+#### Exponential
+```{r}
+# fit variogram model
+ozone_KRfit_Exp <- fit.variogram(ozone_KRvar, 
+                                 vgm(psill = 70, 
+                                     model = "Exp", 
+                                     range = 100000, 
+                                     nugget = 40))
+ozone_KRfit_Exp
+
+plot(ozone_KRvar, ozone_KRfit_Exp,
+     pch=20, cex=1.5, col="black",
+     ylab=expression("Semivariance ("*gamma*")"),
+     xlab="Distance (m)", main = "Model Residuals")
+```
+
+## 
+
+The best variogram model is the spherical model with nugget = 31.34, sill = 38.58, and range 84163, though all three are decent fits early on with a good deal of noise at greater distances.
+
+```{r}
+# Update the gstat object with the variogram
+ozone_KRGstat_up <- gstat(ozone_KRGstat, id = "ozone_KRmodel",
+                          model = ozone_KRfit_Sph)
+# predict across grid
+ozone_KR_sf <- predict(ozone_KRGstat_up, newdata = ozoneGrids_sf)
+ozone_KR_sf
+
+ozone_KR_rast <- sf_2_rast(ozone_KR_sf)
+ozone_KR_rast
+```
+
+### RK Plot {.tabset}
+
+#### Regression Kriging
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozone_KR_rast, aes(fill = ozone_KRmodel.pred), 
+                    alpha = 0.9) +
+  labs(title = "Regression Kriging-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  theme_minimal()
+```
+
+#### Regression Kriging + Real Points
+
+```{r}
+ggplot() +
+  geom_spatraster(data = ozone_KR_rast, aes(fill = ozone_KRmodel.pred), 
+                    alpha = 0.9) +
+  labs(title = "Regression Kriging-Modeled Ozone Concentrations",
+       x = "Longitude", y = "Latitude") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Ozone (ppb)",
+                       na.value = "transparent") +
+  theme_minimal() +
+  geom_sf(data = ozonePoints_sf, aes(fill = ozone), color = "white",
+          shape = 21, alpha = 0.8) 
+```
+
+**Figure 1.5a:** Ozone concentrations modeled with regression kriging with $Ozone \sim Elevation + Traffic$.
+
+The prediction surface after regression kriging with elevation and traffic density as predictor variables has far greater detail in its contours than the previous interpolation methods. High values are not diminished but are interspersed with veins of moderate values, but without the crater-like spots in IDW or the oversmoothing of TPS. 
+
+
+## 1.6 Assess Skill
+
+### Model Skill on Known Points {.tabset}
+
+#### IDW
+```{r}
+obs <- ozonePoints_df[,1]
+preds <- extract(idw_ozone_rast, ozonePoints_df[,2:3]) |>
+      pull(var1.pred)
+
+IDW_rsq_known <- cor(obs,preds)^2
+IDW_rsq_known
+IDW_rmse_known <- sqrt(mean((preds - obs)^2))
+IDW_rmse_known
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Ozone (ppm) IDW Fit")
+```
+
+**Figure 1.6a:** Observed vs predicted values using IDW interpolation with p = 2.5. The final model fits the observed measurements well, with a high $R^2$ of 0.92 and low RMSE of 3.44. Multiple cross-validation iterations of the IDW model were performed when optimizing p at 2.5.
+
+#### TPS
+
+```{r}
+obs <- ozonePoints_df[,1]
+preds <- extract(ozone_TPSrast, ozonePoints_df[,2:3]) |>
+      pull(ozone)
+TPS_rsq_known <- cor(obs,preds)^2
+TPS_rsq_known
+TPS_rmse_known <- sqrt(mean((preds - obs)^2))
+TPS_rmse_known
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Ozone (ppm) TPS Fit")
+```
+
+**Figure 1.6b:** Observed vs predicted values from TPS iterpolation model. $R^2$ = 0.751, RMSE = 5.347.
+
+#### Kriging
+
+```{r}
+obs <- ozonePoints_df[,1]
+preds <- extract(ozoneKrige_rast, ozonePoints_df[,2:3]) |>
+      pull(var1.pred)
+
+Kriging_rsq_known <- cor(obs,preds)^2
+Kriging_rsq_known
+Kriging_rmse_known <- sqrt(mean((preds - obs)^2))
+Kriging_rmse_known
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Ozone (ppm) Kriging Fit")
+```
+
+**Figure 1.6c:** Observed vs Predicted values using ordinary Kriging model. Predicted values are closer fit to observed measurements than the TPS model ($R^2$ = 0.83, RMSE = 4.59). 
+
+#### Regression Kriging
+
+```{r}
+obs <- ozonePoints_df[,1]
+preds <- extract(ozone_KR_rast, ozonePoints_df[,2:3]) |>
+      pull(ozone_KRmodel.pred)
+
+RK_rsq_known <- cor(obs,preds)^2
+RK_rsq_known
+RK_rmse_known <- sqrt(mean((preds - obs)^2))
+RK_rmse_known
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Ozone (ppm) Kriging Fit")
+```
+
+**Figure 1.6d:** Observed vs. Predicted values at known points. $R^2$ = 0.76, RMSE = 5.40.
+
+### Cross Validation {.tabset}
+
+#### IDW
+```{r}
+# test iterations m
+m <- 50
+# number of points n
+n <- nrow(ozonePoints_sf)
+# setup R^2 and RMSE vectors for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+set.seed(7)
+for(i in 1:m){
+  # select rows for testData subset
+  rows4test <- sample(x = 1:n,size = n*0.1)
+  # create testData subset
+  testData <- ozonePoints_sf[rows4test,]
+  # create trainData subset
+  trainData <- ozonePoints_sf[-rows4test,]
+  
+    # IDW model with trainData subset
+    idw_model <- gstat(formula=ozone~1, 
+                       locations = trainData,
+                       set=list(idp = 2.5))
+    # test IDW model compared to observed values in testData
+    obs <- testData$ozone
+    # pull predictions from IDW model
+    preds <- predict(idw_model, newdata = testData, debug.level = 0) |>
+      pull(var1.pred)
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs, preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+  
+}
+
+IDW_rsq <- mean(rsq)
+IDW_rmse <- mean(rmse)
+
+IDW_rsq
+IDW_rmse
+
+```
+
+
+#### TPS
+
+```{r}
+# test iterations m
+m <- 50
+# number of points n
+n <- nrow(ozonePoints_df)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+set.seed(42)
+for(i in 1:m){
+  # select rows for testData subset
+  rows4test <- sample(x = 1:n,size = n*0.1)
+  # create testData subset
+  testData <- ozonePoints_df[rows4test,]
+  # create trainData subset
+  trainData <- ozonePoints_df[-rows4test,]
+  
+  # TPS model with trainData subset
+  tps_model <- Tps(x = trainData[,2:3], Y = trainData[,1])
+  
+  # Predict TPS train model over ozoneGrid
+  tps_preds <- c(predict(object=tps_model, x = gridCoords))
+  
+  # store in a data.frame with the x,y coordinates
+  tps_df <- data.frame(x = gridCoords[,1],
+                         y = gridCoords[,2],
+                         ozone = tps_preds)
+  # convert to Raster with SpatStat
+  tps_rast <- rast(tps_df,
+                      crs = crs(ozonePoints_sf))
+  
+  # pull observed from testData
+  obs <- testData$ozone
+  # pull predictions from TPS model
+  preds <- extract(tps_rast, testData[,2:3]) |>
+      pull(ozone)
+
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs, preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+  
+}
+
+TPS_rsq <- mean(rsq)
+TPS_rmse <- mean(rmse)
+
+TPS_rsq
+TPS_rmse
+```
+
+#### Kriging
+
+```{r}
+# k-fold cross validation
+set.seed(42)
+n <- 50
+ozone_kfold_sf <- krige.cv(formula = ozone ~ 1,
+                               locations = ozonePoints_sf,
+                               model = ozone_fit,
+                               nfold = n,
+                               verbose = FALSE)
+
+ozone_kfold <- data.frame(observed = ozone_kfold_sf$observed,
+                          var1.pred = ozone_kfold_sf$var1.pred,
+                          fold = ozone_kfold_sf$fold)
+
+rsq <- 1:n
+rmse <- 1:n
+fold <- 1:n
+
+mod_fit <- data.frame(rsq, rmse, fold)
+
+for (i in 1:n) {
+  ozone_kfold_sub <- subset(ozone_kfold, fold == i)
+  
+  mod_fit$rsq[i] <- cor(ozone_kfold_sub$observed, ozone_kfold_sub$var1.pred)^2
+  
+  mod_fit$rmse[i] <- sqrt(mean((ozone_kfold_sub$observed - ozone_kfold_sub$var1.pred)^2))
+}
+
+Kriging_rsq <- mean(mod_fit$rsq)
+Kriging_rmse <- mean(mod_fit$rmse)
+
+Kriging_rsq
+Kriging_rmse
+```
+
+#### Regression Kriging
+
+```{r message = FALSE, error = FALSE}
+# test iterations m
+m <- 50
+# number of points n
+n <- nrow(ozonePoints_df)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+set.seed(42)
+
+for (i in 1:m) {
+   # select rows for testData subset
+  rows4test <- sample(x = 1:n, size = n*0.1)
+  # create testData subset
+  testData <- ozonePoints_sf[rows4test,]
+  # create trainData subset
+  trainData <- ozonePoints_sf[-rows4test,]
+
+  # Set up gstat object with regression model
+  ozone_RKGstat <- gstat(id = "ozone",
+                       formula = ozone~elev + traffic,
+                       data = trainData)
+
+  # variogram of model residuals
+  ozone_RKvar <- variogram(ozone_RKGstat)
+  
+  # fit variogram model
+  ozone_RKfit_Sph <- fit.variogram(ozone_RKvar, 
+                                 vgm(psill = 70, 
+                                     model = "Sph", 
+                                     range = 100000, 
+                                     nugget = 40))
+  
+  # Update the gstat object with the variogram
+  ozone_RKGstat_up <- gstat(ozone_RKGstat, id = "ozone",
+                          model = ozone_RKfit_Sph)
+  # predict across grid
+  ozone_RK_sf <- predict(ozone_RKGstat_up, newdata = testData)
+  ozone_RK_sf
+
+  # pull observed from testData
+  obs <- testData$ozone
+  # pull predictions from RK model
+  preds <- ozone_RK_sf$ozone.pred
+preds
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs,preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+}
+
+RK_rsq <- mean(rsq)
+RK_rmse <- mean(rmse)
+
+RK_rsq
+RK_rmse
+```
+
+### Skill Assessment
+
+```{r}
+Method <- c("IDW", "TPS", "Kriging", "RK")
+Rsq_cv <- c(IDW_rsq, TPS_rsq, Kriging_rsq, RK_rsq)
+rmse_cv <- c(IDW_rmse, TPS_rmse, Kriging_rmse, RK_rmse)
+Rsq_known <- c(IDW_rsq_known, TPS_rsq_known, Kriging_rsq_known, RK_rsq_known)
+rmse_known <- c(IDW_rmse_known, TPS_rmse_known, Kriging_rmse_known, RK_rmse_known)
+skill_df <- data.frame(Method = Method,
+                       Rsq_cv = Rsq_cv,
+                       rmse_cv = rmse_cv,
+                       Rsq_known = Rsq_known,
+                       rmse_known = rmse_known)
+
+kable(skill_df)
+```
+
+**Table 1.6:** $R^2$ and RMSE for the four models: IDW, TPS, Kriging, and Regression Kriging. The "cv" values show the cross-validated $R^2$ and RMSE goodness of fit tests. The "known" values are calculated for the final model across all 345 known locations to assess how well the model predicts locations with empirical measurements. 
+
+$R^2$ - or proportion of variance explained by the model - is least with IDW and greatest (0.57) with Kriging. However, RK has the lowest RMSE (6.90), but a lower $R^2$ (0.54). Best model is ultimately subjective, and some more knowledge on how surface ozone concentrations are influenced by elevation would, I think, be critical in determining whether the ordinary Kriging or Regression Kriging model is more appropriate. Their skill is similar, but the RK surface is visibly influenced by elevation.
+
+
+# 2. Regression
+These data contain species composition measurements for 533 100m^2 plots across the Raif section of the Volga-Kama Nature Reserve in Tatarstan, Russia. Here, I explored how distinguishable these plots are based on temperature and moisture.
+
+```{r}
+boreal <- read.csv("data/boreal.csv")
+# head(boreal)
+pal2 <- pnw_palette("Lake", n = nrow(boreal))
+pal3 <- pnw_palette("Sunset2", n = nrow(boreal))
+pal4 <- pnw_palette("Shuksan2", n = nrow(boreal))
+pal4 <- rev(pal4)
+```
+
+## Boreal Index
+$$BI = \sqrt{\frac{1000 (S+1)}{n}} $$
+where $S$ is the number of boreal species and $n$ is the total number of species found in each plot.
+
+```{r}
+boreal$BI <- sqrt((1000*(boreal$nBor + 1)) / boreal$nTot)
+# head(boreal)
+boreal_sf <- st_as_sf(boreal, coords = c("easting", "northing"), crs = 32639)
+```
+### Variable Plots {.tabset}
+
+#### Boreal Index
+```{r}
+ggplot() +
+  geom_sf(data = boreal_sf, aes(col = BI), alpha = 0.8) +
+  guides(size = "none") +
+  scale_color_gradientn(colors = pal2) +
+  theme_minimal()
+```
+
+On a cursory glance, boreal index does appear to be spatially autocorrelated, with high values occurring closer to other high values, and vice versa. 
+
+#### Temperature
+```{r}
+ggplot() +
+  geom_sf(data = boreal_sf, aes(col = tmp), alpha = 0.8) +
+  guides(size = "none") +
+  scale_color_gradientn(colors = pal3) +
+  theme_minimal()
+```
+
+#### Wetness
+```{r}
+ggplot() +
+  geom_sf(data = boreal_sf, aes(col = wet), alpha = 0.8) +
+  guides(size = "none") +
+  scale_color_gradientn(colors = pal4) +
+  theme_minimal()
+```
+
+
+## 2.1 Naive Model
+$$ y = \beta_0 + \beta_1x_1 + \beta_2x_2 $$
+where $y = BI$, $x_1 = Temp$, and $x_2 = Wet$ such that
+
+$$ BI \sim Temp + Wet $$
+
+```{r}
+# fit model assuming no autocorrelation in residuals with gls()
+glsNaive <- gls(BI ~ tmp + wet, boreal)
+summary(glsNaive)
+```
+
+```{r}
+# test iterations m
+m <- 10
+# number of points n
+n <- nrow(boreal)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+set.seed(42)
+
+for (i in 1:m) {
+   # select rows for testData subset
+  rows4test <- sample(x = 1:n, size = n*0.1)
+  # create testData subset
+  testData <- boreal[rows4test,]
+  # create trainData subset
+  trainData <- boreal[-rows4test,]
+  
+  glsNaive_t <- gls(BI ~ tmp + wet, trainData)
+  
+  preds <- predict(glsNaive_t, newdata = testData)
+  
+  # pull observed from testData
+  obs <- testData$BI
+
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs,preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+}
+
+naive_rsq <- mean(rsq)
+naive_rmse <- mean(rmse)
+
+naive_rsq
+naive_rmse
+```
+
+
+The initial naive model (using Ordinary Least Squares) produces a slope for both temperature and wetness that are signficantly different from 0 (Temperature: t = 4.20, p < 0.001; Wetness: t = 13.9, p < 0.001). Cross validation shows however that the model is not a great fit (average $R^2$ = 0.344, average RMSE = 3.43). 
+
+**Naive Model:**
+$$y = -212.813 + 0.779x_1 + 152.223x_2 $$,
+where $x_1$ = Temp and $x_2$ = Wet.
+
+```{r}
+boreal$glsNaiveResids <- residuals(glsNaive, type = "normalized")
+boreal_sf <- st_as_sf(boreal, coords = c("easting", "northing"), crs = 32639)
+# boreal_sf
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = boreal_sf, 
+          aes(col = glsNaiveResids, size = glsNaiveResids),
+          alpha = 0.8) +
+  guides(size = "none") +
+  scale_color_gradientn(colors = pal2) +
+  theme_minimal()
+```
+
+Residuals of the naive model also appear to have some spatial structure.
+
+```{r}
+# test for spatial autocorrelation using a correlogram
+residsI <- spline.correlog(x = boreal$easting, y = boreal$northing,
+                           z = boreal$glsNaiveResids, 
+                           resamp = 50, quiet = TRUE)
+
+# save coordinate points as matrix for dist()
+points <- cbind(boreal$easting, boreal$northing)
+
+# plot Moran's I for residuals
+plot(residsI, xlim = c(0, max(dist(points))/3))
+```
+
+Moran's I of the residuals shows that there is spatial autocorrelation in the residuals of the naive model, particularly at distances below ~500m. 
+
+## 2.2 Better Model
+
+```{r}
+# using autofitVariogram() to produce experimental and fitted variogram
+## tests Gaussian, Spherical, and Exponential fits and produces the best
+boreal_fit <- autofitVariogram(glsNaiveResids~1, input_data = boreal_sf, 
+                      model = c("Gau", "Sph", "Exp"))
+plot(boreal_fit)
+```
+
+The best variogram for the residuals is an exponential model with nugget = 0.41, sill = 1, and range = 105. This will be used as a correlation structure to find the variance-covariance matrix for the updated model.
+
+```{r}
+csSpatial <- corSpatial(form=~easting+northing, nugget = TRUE, type = "exponential")
+glsUpdated <- update(glsNaive, correlation = csSpatial)
+summary(glsUpdated)
+```
+
+
+```{r}
+# test iterations m
+m <- 10
+# number of points n
+n <- nrow(boreal)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+csSpatial <- corSpatial(form=~easting+northing, nugget = TRUE, type = "exponential")
+
+set.seed(42)
+
+for (i in 1:m) {
+   # select rows for testData subset
+  rows4test <- sample(x = 1:n, size = n*0.1)
+  # create testData subset
+  testData <- boreal[rows4test,]
+  # create trainData subset
+  trainData <- boreal[-rows4test,]
+  
+  glsNaive_t <- gls(BI ~ tmp + wet, trainData)
+  
+  glsUpdated_t <- update(glsNaive_t, correlation = csSpatial)
+  
+  preds <- predict(glsUpdated_t, newdata = testData)
+  
+  # pull observed from testData
+  obs <- testData$BI
+
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs,preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+}
+
+updated_rsq <- mean(rsq)
+updated_rmse <- mean(rmse)
+
+updated_rsq
+updated_rmse
+
+
+```
+
+When using Generalized Least Squares (GLS) to account for spatial structure in Boreal Index, the predictor variables have different significance than in the naive model. Primarily, temperature no longer has a significant slope and is not a good predictor of Boreal Index when spatial autocorrelation is considered (t = 1.20, p = 0.232). Wetness remains a good predictor (t = 5.60, p < 0.001). After cross-validation, the model explains roughly the same amount of variation in BI: mean $R^2$ = 0.333, average RMSE = 4.0.
+
+**Better Model:**
+$$y = -77.24 + 0.311 x_1 + 1.197 x_2 $$
+where $x_1$ = Temp and $x_2$ = Wet.
+
+## 2.3 Synthesis.
+
+Improving the model with spatial structure through Generalized Least Squares regression draws questions about the importance of temperature as an effective predictor variable for Boreal Index across these plots. In the naive model, temperature is a significant predictor, but it does not remain significant when the model is updated with spatial structure.
+
+Given that our dependent variable, Boreal Index, is a measure of how many boreal-exclusive trees are present vs their more southerly counterparts, it makes sense ecologically that BI in this forest would be more dependent on moisture levels than temperature. Temperature is a more variable environmental factor than wetness typically, whereas moisture levels can be retained for longer periods of time. Moisture would therefore be more indicative of long-term conditions that might limit growth of certain types of trees. Since the Raif region consists of a rare cross-over of boreal and southern species, presence/absence of certain species within each plot is most likely due to those factors that affect habitat suitability the most. I would anticipate that moisture (especially in a colder climate like Russia) will impact habitat suitability more than temperature, which can fluctuate a great deal daily and seasonally.
+
+Overall, however, the updated model explains only a tiny bit more of variation in BI than the naive model and has a higher RMSE after cross-validation. We can also see from plotting the observed BI values to the predicted that the updated model may actually be doing a worse job of predicting our known values.
+
+
+
+```{r}
+preds <- predict(glsNaive, newdata = boreal)
+  obs <- boreal$BI
+
+    # pull R^2 and RMSE
+    naive_rsq <- cor(obs,preds)^2
+    naive_rmse <- sqrt(mean((preds - obs)^2))
+
+    
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="BI Naive Model Fit")
+```
+
+```{r}
+preds <- predict(glsUpdated, newdata = boreal)
+  obs <- boreal$BI
+
+    # pull R^2 and RMSE
+    upd_rsq <- cor(obs,preds)^2
+    upd_rmse <- sqrt(mean((preds - obs)^2))
+
+    
+    
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="BI Updated Model Fit")
+```
+
+This all led me to try one last, "best" model excluding temperature entirely.
+
+```{r}
+glswet_Naive <- gls(BI ~ wet, boreal)
+
+boreal$glswet_NaiveResids <- residuals(glswet_Naive, type = "normalized")
+boreal_sf <- st_as_sf(boreal, coords = c("easting", "northing"), crs = 32639)
+boreal_wetfit <- autofitVariogram(glswet_NaiveResids~1, 
+                                  input_data = boreal_sf, 
+                                  model = c("Gau", "Sph", "Exp"))
+plot(boreal_wetfit)
+```
+
+```{r}
+csSpatial <- corSpatial(form=~easting+northing, nugget = TRUE, type = "exponential")
+
+glswet_Updated <- update(glswet_Naive, correlation = csSpatial)
+  
+  preds <- predict(glswet_Updated, newdata = boreal)
+  
+  obs <- boreal$BI
+  
+  ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds)) + 
+  coord_fixed(ratio=1, xlim = range(preds, obs),
+              ylim = range(preds, obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="BI Updated Model (Wet Only) Fit")
+```
+
+```{r}
+# test iterations m
+m <- 10
+# number of points n
+n <- nrow(boreal)
+# setup R^2 and RMSE matrices for outputs
+rsq <- matrix(0,ncol=1,nrow=m)
+rmse <- matrix(0,ncol=1,nrow=m)
+
+csSpatial <- corSpatial(form=~easting+northing, nugget = TRUE, type = "exponential")
+
+set.seed(42)
+
+for (i in 1:m) {
+   # select rows for testData subset
+  rows4test <- sample(x = 1:n, size = n*0.1)
+  # create testData subset
+  testData <- boreal[rows4test,]
+  # create trainData subset
+  trainData <- boreal[-rows4test,]
+  
+  glswet_Naive_t <- gls(BI ~ wet, boreal)
+  
+  glswet_Updated_t <- update(glswet_Naive_t, correlation = csSpatial)
+  
+  preds <- predict(glswet_Updated_t, newdata = testData)
+  
+  # pull observed from testData
+  obs <- testData$BI
+
+    # pull R^2 and RMSE
+    rsq[i] <- cor(obs,preds)^2
+    rmse[i] <- sqrt(mean((preds - obs)^2))
+}
+
+wet_rsq <- mean(rsq)
+wet_rmse <- mean(rmse)
+
+wet_rsq
+wet_rmse
+
+```
+
+As it turns out, temperature is still contributing to the model by explaining a small amount of variance in BI across plots. The GLS updated model with only wetness as a predictor variable has a lower cross-validated $R^2$ (0.32) and higher RMSE (4.05) than the previous model.
+
+In this case, including spatial structure is not actually contributing immensely to the model or altering interpretation. While it is an important consideration when autocorrelation in a variable is present, sometimes the simpler model (i.e., the naive linear regression model $BI \sim Temp + Wet$) provides sufficient predictions to make inference.
+
+

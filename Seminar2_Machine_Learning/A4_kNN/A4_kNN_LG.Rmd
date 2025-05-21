@@ -1,0 +1,197 @@
+---
+title: "A4 k-Nearest Neighbors"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+---
+
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+pre.r {
+  max-height: 1020px;
+}
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning = FALSE}
+# Library
+## tidyverse for data wrangling
+library(tidyverse)
+## plotly for 3D plots
+library(plotly)
+## class for classification functions
+library(class)
+## caret for train() function
+library(caret)
+## scales for rescaling
+library(scales)
+```
+
+# The Data
+
+```{r}
+# loading data
+fish <- read_csv("fishcatch.csv")
+head(fish)
+str(fish)
+unique(fish$std_name)
+```
+
+These data consist of fish catch records in Lake Laengelmavesi, Finland, from 1917. Seven species of fish were caught and multiple measurements were taken, including weight (g) as well as height, weight, and three measures of length (cm). The data also include ratios of height to length and width to length, as a percent.
+
+In order to categorize fish based on these measurements, we need to first standardize the measurements and tidy the data. I will do this by converting the measurements into z-scores, which subtracts the mean and divides by the standard deviation to transform the data into a standard normal distribution range.
+
+```{r}
+fish_std <- fish |>
+  # remove columns we don't need
+  select(!common_name & !sex) |>
+  # remove NAs
+  drop_na()
+
+z_score <- function(x) {
+  return((x - mean(x)) / sd(x))
+}
+
+fish_std <- tibble(data.frame(fish_std[,1],
+                              apply(fish_std[,-1], 2, FUN = z_score),
+                              id = seq(nrow(fish_std)))) |>
+  mutate(std_name = as.factor(std_name))
+
+```
+
+Now we can visualize the some of the data in the same reference space. For instance, width, height, and weight:
+
+```{r}
+p1 <- plot_ly(fish_std,
+             x = ~width_cm,
+             y = ~height_cm,
+             z = ~weight_g,
+             color = ~std_name,
+             size = I(150)) |>
+  add_markers() |>
+  layout(scene = list(xaxis = list(title = "Width"),
+                      yaxis = list(title = "Height"),
+                      zaxis = list(title = "Weight"))) 
+p1
+```
+
+There are some distinct groupings by species, as well as potential linear or logarithmic trends in these variables.
+
+# kNN
+
+## Single Case
+
+First, I ran single k-Nearest Neighbors run on a train and test subset of the fish catch data. I started with a k equal to the square-root of the data size, as recommended as a potential starting point in the reading. Ultimately I expanded that to multiple k's. I set the training dataset to be 67% of the original 158 rows, sampling randomly from each species to be sure of a representative subset.
+
+```{r}
+set.seed(42)
+# sample random rows from each species
+fish_train <- fish_std |>
+  group_by(std_name) |>
+  slice_sample(prop = 0.67) 
+
+# pull non-sampled rows for test dataset
+fish_test <- filter(fish_std, !(id %in% fish_train$id))
+
+# determine initial k value
+k1 <- round(sqrt(nrow(fish_train)))
+
+# run kNN
+fish_knn <- knn(test = fish_test[,-c(1,10), drop = FALSE], 
+                train = fish_train[,-c(1,10), drop = FALSE],
+                cl = fish_train$std_name,
+                k = k1)
+
+```
+
+A confusion matrix helps compare the real classifications of our test dataset to the predicted classes from kNN.
+
+```{r}
+# create confusion matrix (caret package)
+cm <- confusionMatrix(data = fish_knn, reference = fish_test$std_name)
+cm
+```
+
+With a Kappa of `r round(cm$overall[2], digits = 3)` and an accuracy of `r round(cm$overall[1], digits = 3)`, the initial run of the kNN did surprisingly well at predicting species. Interestingly, many of the mismatches were between species that shared a genus, just as *Abramis bjrkna* and *Abramis brama*, as well as *Leuciscus rutilus* and *Leuscis idus* in some runs. 
+
+## Repeated Runs
+
+We can get a confidence interval by repeating the sampling process multiple times and evaluating the spread of our kappa and accuracy values.
+
+```{r}
+# create a function to produce the stats of interest
+fish_knn_fxn <- function(x) {
+  fish_train <- fish_std |>
+    group_by(std_name) |>
+    slice_sample(prop = 0.67) 
+
+  fish_test <- filter(fish_std, !(id %in% fish_train$id))
+  k1 <- round(sqrt(nrow(fish_train)))
+  
+  fish_knn <- knn(test = fish_test[,-c(1,10), drop = FALSE], 
+                  train = fish_train[,-c(1,10), drop = FALSE],
+                  cl = fish_train$std_name,
+                  k = k1)
+  cm <- confusionMatrix(data = fish_knn, reference = fish_test$std_name)
+  
+  return(cm$overall[1:2])
+}
+```
+
+```{r}
+# test function on a single run
+fish_knn_fxn(fish_std)
+```
+
+```{r}
+# establish loop to repeat function multiple times
+n <- 100
+fish_knn_df <- matrix(nrow = n, ncol = 2)
+for(i in seq(n)) {
+  fish_knn_df[i,] <- fish_knn_fxn(fish_std)
+}
+fish_knn_df
+```
+
+```{r}
+fish_cv <- data.frame(k = c(mean(fish_knn_df[,1]), sd(fish_knn_df[,1])),
+                      acc = c(mean(fish_knn_df[,2]), sd(fish_knn_df[,2])))
+row.names(fish_cv) <- c("mean", "sd")
+
+head(fish_cv)
+```
+
+Our kappa and accuracy are consistently high (k = `r fish_cv$k[1]`, sd = `r fish_cv$k[2]`; accuracy = `r fish_cv$acc[1]`, sd = `r fish_cv$acc[2]`) with relatively little spread. Given the sample size of some species in the dataset, there may be some bias in the classification, but I am impressed with the consistently high accuracy.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

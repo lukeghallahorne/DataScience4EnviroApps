@@ -1,0 +1,251 @@
+---
+title: "Assignment 8: Fitting Variables"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, error = FALSE, warning=FALSE}
+library(mvabund) # spider data
+library(vegan) # metaMDS(), envfit()
+library(tidyverse) # ggplot()
+library(GGally) # ggpairs()
+library(corrplot) # corrplot()
+library(PNWColors) # pnw_palette()
+library(dendextend) # color_branches(), color_labels()
+```
+
+```{r}
+# Color Palettes
+pal1 <- pnw_palette("Bay", 6)
+pal2 <- pnw_palette("Bay", 4)
+```
+
+
+```{r}
+data(spider)
+# ?spider
+```
+
+
+# Introduction {.tabset}
+These data consist of community abundance for twelve hunting spider species, as well as six environmental variables describing the species' habitats. 
+
+Spider Species:
+
+- *Alopecosa accentuata*
+- *Alopecosa cuneata*
+- *Alopecosa fabrilis*
+- *Arctosa lutetiana*
+- *Arctosa perita*
+- *Aulonia albimana*
+- *Pardosa lugubris*
+- *Pardosa monticola*
+- *Pardosa nigriceps*
+- *Pardosa pullata*
+- *Trochosa terricola*
+- *Zora spinimana*
+
+Species are abbreviated with the first four letters of the genus name followed by the first four letters of the species name.
+
+Environmental Variables:
+
+- soil.dry: soil dry mass
+- bare.sand: cover bare sand
+- fallen.leaves: cover fallen leaves/twigs
+- moss: cover moss
+- herb.layer: cover herb layer
+- reflection: reflection of the soil surface with a cloudless sky
+
+The environmental variables were log(x+1)-transformed.
+
+## Pairs Plot [,1:6]
+```{r message = FALSE}
+spider.abund <- data.frame(spider$abund)
+spider.env <- data.frame(spider$x)
+ggpairs(spider.abund[,1:6])
+```
+
+## Pairs Plot [,7:12]
+```{r message = FALSE}
+ggpairs(spider.abund[,7:12])
+```
+
+## Correlation Plot
+```{r}
+M <- cor(spider.abund)
+corrplot(M)
+```
+
+# 
+Distribution plots of spider species abundances do not have a bell curve typical of normal data, and pairwise plots show a strong tendency towards zeros. Since this is community abundance data, this is unsurprising. The correlation plot and correlation coefficients in the pairs plots show that most spider species are moderately correlated with one another, justifying the use of multivariate methods.
+
+The goal of this analysis is to answer the questions:
+
+- **Is there an observable pattern in these 28 observations of hunting spider communities?**
+- **If so, do the environmental variables explain any of those patterns?**
+
+# Methods
+## Ordination
+
+To better visualize these data, I used nonmetric Multidimensional Scaling (nMDS), an iterative ordination method ideal for community abundance data. For distance/dissimilarity measures in nMDS, I used Bray-Curtis measurements because they better account for non-normal data with many zeros than Euclidean measurements. I chose two axes for the ordination plot, as the stress was very low (0.065) and the non-metric R^2 quite high (0.996), showing that the two axes describe the majority of variation.
+
+I used averages of each species weighted by nMDS axes 1 and 2 to plot the species scores alongside the sample points to show which species are common among certain plots.
+
+```{r}
+set.seed(42)
+
+spider.nmds <- metaMDS(spider.abund, k = 2)
+stressplot(spider.nmds)
+```
+
+## Cluster Analysis
+
+I used hierarchical clustering with Ward's linkage to determine if the spider communities naturally grouped based on species abundances. Ward's linkage is an agglomerative algorithm that minimizes the variance among points in a group, making it a good choice for these data. After visualizing the clusters with a dendrogram, I decided to cut the tree at k = 4 with four clusters, since four fairly distinct groups arise at a distance of approximately 0.5 - 0.7.
+
+```{r}
+spider.dist <- vegdist(spider.abund, method = "bray")
+spider.hcl <- hclust(spider.dist)
+spider.dend <- as.dendrogram(spider.hcl)
+spider.clust <- cutree(spider.hcl, k = 4)
+
+spider.dend <- spider.dend |>
+  color_branches(k = 4, col = pal2) |>
+  color_labels(k = 4, col = pal2)
+
+plot(spider.dend)
+```
+
+## Fitting Environmental Variables
+
+To fit environmental variables back onto the ordination space, I regressed each continuous variable onto nMDS1 and nMDS2. This produced a vector in the nMDS space that shows the maximum gradient of change for each variable, as well as R^2 goodness of fit values, and permuted p-values for the significance of that R^2. The length of the vector represents the scaled magnitude of that gradient. 
+
+```{r}
+set.seed(42)
+
+my.fit <- envfit(spider.nmds, spider.env, choices = c(1,2))
+my.fit
+```
+
+
+# Results
+
+```{r}
+# nMDS Scores and Clusters for Abundance Dataframe for Plotting
+spiderPlot <- data.frame(
+  NMDS1 <- spider.nmds$points[,1],
+  NMDS2 <- spider.nmds$points[,2],
+  Cluster <- as.factor(spider.clust))
+
+# Environmental Variables Dataframe for Plotting
+vecPlot <- as.data.frame(scores(my.fit,
+                                display = "vectors"))
+
+vecPlot <- cbind(vecPlot,
+                 Vname = rownames(vecPlot),
+                 Pvalues = my.fit$vectors$pvals,
+                 R_squared = my.fit$vectors$r)
+# Filter by significant p value (not necessary here but kept for reference)
+vecPlot <- subset(vecPlot, Pvalues < 0.05)
+
+# Species Scores Dataframe for Plotting
+Species1 <- spider.nmds$species[,1]
+Species2 <- spider.nmds$species[,2]
+Names <- rownames(spider.nmds$species)
+speciesPlot <- data.frame(Species1, Species2, Names)
+
+```
+
+```{r}
+# Ordination Plot
+plot1 <- ggplot() +
+  geom_point(data = spiderPlot,
+             aes(x = NMDS1, y = NMDS2, color = Cluster), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS2") +
+  scale_color_manual(values = pal2) +
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = NMDS1,
+                   y = 0, yend = NMDS2),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  geom_text(data = speciesPlot,
+            aes(x = Species1, y = Species2,
+                label = Names),
+            size = 2.5, color = "coral4") +
+  geom_text(data = vecPlot,
+            aes(x = NMDS1, y = NMDS2,
+                label = Vname),
+            color = "grey30",
+            size = 3, 
+            nudge_x = c(0.1, -0.05, 0, -0.1, 0, 0),
+            nudge_y = c(0, 0.05, 0.05, 0, -0.025, -0.025))
+plot1
+
+```
+
+Figure 1. Non-Metric Multidimensional Scaling of hunting spider communities (stress = 0.0646, non-metric $R^2$ = 0.996). Colors depict clusters determined from hierarchical cluster analysis. Arrow vectors show fitted environmental variables in the direction of strongest gradient of change. Vector lengths represent scales magnitude of the gradient. Maroon text shows the species scores for each spider.
+
+# Discussion
+
+Environmental variables mapped into different areas of the nMDS space. Fallen leaves were positive in nMDS1 and nMDS2, opposite from high values of moss and reflection. Furthermore, moss and reflection mapped onto similar gradients, so they likely explain similar variation among sites. Bare sand and dry soil are also mapped opposite one another, implying that they explain similar variation in opposite directions. Herb layer is not strongly represented in nMDS1, but has a noticeable influence on nMDS2, with high herb layer values reflected in negative nMDS2 scores.
+
+Clusters show apparent trends to have similar environmental characteristics. Cluster 1 sites typically have dry soil and some herb layer. Cluster 2 sites are dominated by fallen leaves. Cluster 3 tends toward high values of moss and reflection, and cluster 4 consists of mainly bare sand habitats. 
+
+# Conclusions
+
+Cluster analysis showed that there do appear to be patterns in hunting spider community composition among sites. These clusters separate well in an nMDS ordination space. Fitting environmental variables onto the nMDS shows that habitat influences these patterns: groups can be categorized by being dominated by fallen leaves, dry soil and herb layer, moss and high reflection, or bare sand. Further analysis with hypothesis tests (i.e., PERMANOVA) would be needed to determine if the apparent groupings are significant and how much variation each environmental variable is explaining.
+
+# Reflection
+
+I actually really enjoyed this assignment - it felt like a solid synthesis and conclusion of the ordinations we have been working with.
+
+I wanted to go a little further with this one for the draft, but with a proposal deadline the same evening, this is as far as I got. If I have the time before Wednesday, I would like to include the PERMANOVA to see how the environmental variables are actually explaining the data. I also would like to include abundance bar plots for each cluster to better show how each differs.
+
+**Final:** I removed the colors from the arrows as suggested, which makes a lot of sense. I attempted to make the bar plots for the communities, but was really struggling to get the dataframe to work with me. I got the abundance data into long form along with site ID and cluster assignments, but after the first attempt at plotting there were far too many zeros of all species in each cluster plot to make much sense of it. When I tried to remove the rows with zeros and only plot communities from each cluster, ggplot got very mad.
+
+```{r}
+abundPlot <- data.frame(Cluster <- as.factor(spider.clust),
+                        ID <- as.factor(1:nrow(spider.abund)))
+
+abundPlot <- cbind(abundPlot,
+                   spider.abund)
+abundPlot
+
+abund.long <- abundPlot |>
+  gather(key = "Species", value = "Count", 3:14)
+colnames(abund.long) <- c("Cluster", "ID", "Species", "Count")
+abund.long
+
+abund.sub <- filter(abund.long, Count > 0)
+abund.sub
+
+```
+
+```{r include = FALSE}
+plot2a <- ggplot(data = abund.sub) +
+  geom_bar(aes(x = ID, y = Count,
+               fill = Species)) +
+  facet_wrap(Cluster)
+  
+#plot2a
+
+```
+
+I was not able to find the time to go through the full PERMANOVA analysis, but I did get a nice refresher before the final when going back through assignment 4 and the midterm.
+

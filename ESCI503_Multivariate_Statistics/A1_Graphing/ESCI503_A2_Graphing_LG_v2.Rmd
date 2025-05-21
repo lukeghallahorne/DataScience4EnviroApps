@@ -1,0 +1,315 @@
+---
+title: "ESCI 503 Assignment 2: Graphing (Draft)"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, include = FALSE}
+library(tidyverse)
+library(GGally)
+library(PNWColors)
+library(scatterplot3d)
+library(knitr)
+library(plotly)
+```
+
+## Instructions. {.tabset}
+
+Create an R markdown document (.Rmd) and from that document, produce a knitted html document that includes the following content under each of the listed headers.
+
+### Introduction
+
+Brief description of your chosen dataset and the question you are trying to answer.
+
+### Methods
+
+Explain the steps you will take in your analysis.
+
+-   How will you 'get to know' your dataset?
+-   What graph will you use to answer your question?
+-   Will you need to wrangle (i.e. rearrange) your data?
+-   If so, how will you do it?
+
+### Results
+
+Your informative (and beautiful) graph.
+
+### Conclusion
+
+Answer your question and use your results as evidence.
+
+In other words, what is the story in your graph?
+
+### Reflection
+
+Are you happy with your work?
+
+-   What was especially challenging?
+-   What did you learn?
+-   Anything else I should know?
+
+## Introduction.
+
+This dataset consists of chemical measurements of wine samples from the same region of Italy but from three different cultivars (cultivated varieties), named simply as 1 (n = 59), 2 (n = 71), and 3 (n = 48).
+The quantities of 13 chemical constituents were calculated for each wine sample.
+Units were not provided for the dataset, as it is an incomplete version of the original with 30 chemical constituent.
+
+Constituents:
+
+-   Alcohol
+-   Malic acid
+-   Ash
+-   Alkalinity of ash
+-   Magnesium
+-   Total phenols
+-   Flavonoids
+-   Nonflavanoid phenols
+-   Proanthocyanins
+-   Color intensity
+-   Hue
+-   OD280/OD315 of diluted wines
+-   Proline
+
+Using this dataset, I will address the question: How the quantities of chemical constituents differ between different wine types grown in the same region?
+
+## Methods.
+
+Due to the large number of response variables in this dataset, I will focus on a subset with fewer but likely correlated variables.
+These will include: alcohol, malic acid, ash, and alkalinity of ash (each of which affect pH); total phenols, flavonoids, and nonflavonoid phenols (plant antioxidants); and hue and color intensity (relating to color).
+This will require subsetting the dataset to include only the variables of interest.
+
+I will visualize these response variables three ways.
+First, I will use ggpairs() from the GGally package to create a scatter plot matrix of the variables.
+If the matrix contains too many variables to effectively visualize their relationships, I will create multiple matrices from the three groupings above (pH, antioxidants, and color).
+I will initially use symbols to differentiate between wine cultivars, but if the points are too dense to distinguish I will try the same with colors.
+
+Second, I will create a three-dimensional plot for the pH and antioxidant subgroups, with symbols differentiating between wine cultivars and a color scale to represent hue, potentially with an opacity filter to represent color intensity.
+This will utilize the scatterplot3d() function from the scatterplot3d package.
+
+Third, I will construct profiles of the variables by each wine cultivar.
+Side-by-side barcharts in the profile will likely be the best option to visualize differences.
+This may require rearranging the dataset or creating multiple profiles for each response variable subgroup (pH and antioxidants primarily, in this case).
+
+## Results.
+
+```{r Data.Exploration, results = FALSE}
+# searching data() in R for a desired dataset.
+# data()
+
+# Data chosen from recommendation list on assignment page.
+
+# Loading data
+wine <- read.table("http://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data", sep = ",")
+
+# Examining data
+head(wine)
+summary(wine)
+dim(wine)
+
+# Column names were not imported when dataset was loaded. 
+
+# Changing column names using order provided by original website.
+wine.names <- c("Cultivar", 
+                "Alcohol", 
+                "Malic_acid", 
+                "Ash", 
+                "Alkalinity_of_ash",
+                "Magnesium",
+                "Total_phenols",
+                "Flavonoids",
+                "Nonflavanoid_phenols",
+                "Proanthocyanins",
+                "Color_intensity",
+                "Hue",
+                "OD280_OD315_of_diluted_wines",
+                "Proline")
+colnames(wine) <- wine.names
+
+#double-checking
+head(wine)
+
+#converting Cultivar from numeric variable to factor
+wine$Cultivar <- as.factor(wine$Cultivar)
+```
+
+```{r Data.subsetting, results = FALSE}
+#subset with variables of interest
+wine1 <- wine[,c("Cultivar", "Alcohol", "Malic_acid", "Ash", "Alkalinity_of_ash","Total_phenols", "Flavonoids",            "Nonflavanoid_phenols", "Color_intensity", "Hue")]
+head(wine1)
+dim(wine1)
+
+#maybe that's still too many variables. narrowing it down to 4 continuous response variables
+wine2 <- wine[,c("Cultivar", "Alcohol", "Malic_acid", "Ash", "Alkalinity_of_ash")]
+
+```
+
+After fully exploring the code, I realized my initial set of variables was far too numerous for any realistic visualization.
+I narrowed down the responses to include Cultivar (the main variable of interest) with alcohol, malic acid, ash, and alkalinity of ash.
+I plan to include more of my original variables as I work with plotting.
+
+```{r Data.summary1}
+# n, mean, median, quartiles, min, and max by Cultivar 1
+kable(summary(subset(wine2, Cultivar == "1")))
+
+#Tables need polishing and better labels.
+```
+
+Table 1.
+Data summary of wine constituents for Cultivar 2 (n, mean, median, quartiles, minimum, and maximum).
+
+```{r Data.summary2}
+# n, mean, median, quartiles, min, and max by Cultivar 2
+kable(summary(subset(wine2, Cultivar == "2")))
+```
+
+Table 2.
+Data summary of wine constituents for Cultivar 2 (n, mean, median, quartiles, minimum, and maximum).
+
+```{r Data.summary3}
+# n, mean, median, quartiles, min, and max by Cultivar 3
+kable(summary(subset(wine2, Cultivar == "3")))
+```
+
+Table 3.
+Data summary of wine constituents for Cultivar 3 (n, mean, median, quartiles, minimum, and maximum).
+
+```{r Data.scattermatrix, fig.asp = 0.8}
+#First attempt at scattermatrix - kept for reference as I figure out customizing colors
+
+#names(pnw_palettes)
+
+#pal1 <- pnw_palette("Starfish", n = 3)
+#pal1
+
+
+#ggpairs(data = wine2, mapping = aes(colour = Cultivar),
+      #  upper = list(continuous = function(data, mapping, ...) {
+     #    ggally_cor(data = data, mapping = mapping) + #scale_fill_manual(values = pal1)}),
+  #  lower = list(continuous = function(data, mapping, ...) {
+  #       ggally_smooth(data = data, mapping = mapping, alpha = #.2) + scale_colour_manual(values = pal1)}),
+   # diag = list(continuous = function(data, mapping, ...) {
+   #      ggally_barDiag(data = data, mapping = mapping, alpha = .5) + scale_fill_manual(values = pal1)}))
+
+
+#?mapping
+#?ggpairs
+
+## Could not get all plots in the matrix to take on the customized color palette. Moving on for now, will circle back.
+```
+
+```{r Data.scattermatrix2, results = FALSE, message = FALSE, fig.asp = 0.8}
+#scatterplot matrix using smaller subset
+plot1 <- ggpairs(wine2, mapping = ggplot2::aes(pch = Cultivar, color = Cultivar), progress = FALSE)
+plot1
+
+# Pearson correlation coefficient tests to retrieve p-values associated with R values in plot1
+cor.test(wine2$Malic_acid, wine2$Alcohol)
+cor.test(wine2$Ash, wine2$Alkalinity_of_ash)
+
+```
+
+Figure 1.
+Scatter matrix plot for wine subset (cultivar, alcohol, malic acid, ash, alkalinity of ash).
+Diagonal plots show distributions of individual variables.
+Lower diagonal plots show histograms (with cultivar) and scatterplots for pairs of variables.
+Upper diagonal plots contain the Pearson correlation coefficients for each pair of continuous variables, and boxplots of each continuous variable by cultivar.
+
+Most variables have some minor correlation, apart from alcohol and malic acid (R = 0.094, t~176~ = 1.258, p < 0.210), and the highest correlation is between ash and alkalinity of ash (R = 0.443, t~176~ = 6.562, p < 0.001).
+
+Some sparse grouping by cultivar can be seen for most variables, particularly alcohol by itself, as well as alcohol and malic acid. Further analysis would be needed to determine how distinct these three groups are.
+
+
+```{r Data.3Dscatter, fig.asp = 0.9}
+#Creating vector for pch to assign shapes by Cultivar
+
+shapes = c(16, 17, 19) 
+shapes <- shapes[as.numeric(wine$Cultivar)]
+
+# 3D Scatterplot of Alcohol, Malic acid, and alkalinity, with cultivar by shape and color
+scatterplot3d(x = wine$Alcohol,
+              y = wine$Malic_acid, 
+              z = wine$Alkalinity_of_ash, 
+              pch = shapes,
+              color = wine$Cultivar,
+              xlab = "Alcohol",
+              ylab = "Malic acid",
+              zlab = "Alkalinity of ash",
+              type = "h")
+legend("topright", legend = levels(as.factor(wine$Cultivar)), col = seq_along(wine$Cultivar), pch = c(16, 17, 18) , title = "Cultivar")
+
+#need to change Malic acid axis label
+```
+
+Figure 2.
+3-Dimensional scatterplot of wine alcohol, malic acid, and alkalinity of ash. Different colors and shapes correspond to different cultivars, as shown in the legend. Lines beneath points drawn to better visualize spacing.
+
+The 3D scatterplot further shows the clusters emerging in the alcohol-malic acid plot in Figure 1. Cultivar 1 appears to tend toward higher alcohol and lower malic acid and alkalinity of ash. Cultivars 2 and 3 have a similar spread of alkalinity and possibly alcohol, but cultivar 2 tends toward lower malic acid than cultivar 3.
+
+
+```{r profile.plots, fig.show='hide'}
+#profile plots, attempt 1
+wine.stats <- wine |>
+  group_by(Cultivar) |>
+  summarise(
+    count = n(),
+    meanAlc = mean(Alcohol,na.rm=TRUE),
+    sdAlc = sd(Alcohol, na.rm=TRUE),
+    seAlc = sdAlc/sqrt(count),
+    ci95lower = meanAlc - seAlc*1.96,
+    ci95upper = meanAlc + seAlc*1.96
+  )
+
+ggplot(data = wine.stats, aes (x = Cultivar, y = meanAlc)) +
+  geom_point()
+
+
+# I had some trouble getting the profile plots to work before the draft deadline. Will work on this for the final assignment. 
+
+```
+
+```{r finalplot}
+pal1 <- pnw_palette("Sunset", 178, type = "continuous")
+# pal1
+ggplot(data = wine, aes(x = Alcohol, y = Alkalinity_of_ash, color = Malic_acid, shape = Cultivar)) +
+  geom_point() 
+#?pnw_palette
+# still can't get my custom palettes to work, despite having used PNW Colors in many previous classes.
+```
+
+Figure 3. Alcohol, alkalinity of ash, and malic acid contents of wine by cultivar. Symbols indicate wine cultivar, and colors show malic acid concentration.
+
+
+
+## Conclusion.
+
+Wine constituents - in particular those that contribute significantly to pH - appear to differ slightly between the three cultivars, despite being grown in the same region of Italy. They differ more in their acids than in ash and its alkalinity: the 3D plot best visualizes the clusters of points by each cultivar. Cultivar 1 has higher alcohol and lower malic acid and alkalinity versus 2 or 3, while they differ primarily in their malic acid content.
+
+This is a very large dataset, and including further variables will shed more light on how these three cultivars differ. Furthermore, these groupings are only based on visual appearance - statistical analysis should follow to determine if the differences are significant.
+
+
+## Reflection.
+I struggled with including as many variables as I had originally intended. I wanted to do multiple plots because I have previously used scatterplot matrices and wanted to try new forms, but they're very helpful visualization tools, so I did both.
+
+I could not get the profile plots to work though. I think I was making some headway but ran out of time for the draft.
+
+I learned a lot about 3D plotting, but there is still a lot to unpack there. I wasn't able to get axis rotation to work, which would help with seeing groups/patterns. 
+
+I also could not get color gradients for additional variables to work, or even customize the colors of the points. While this is not a huge deal, nice colors in plots go a long way in my opinion.
+
+New: I added the third figure in response to Jenna's very helpful comments! I agree with her assessment - the 2D map with the cultivar as shape and malic acid as color is much easier to interpret than the static 3D plot.
+
+<br> 

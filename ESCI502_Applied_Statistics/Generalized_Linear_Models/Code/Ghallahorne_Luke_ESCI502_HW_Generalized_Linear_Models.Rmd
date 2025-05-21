@@ -1,0 +1,550 @@
+---
+title: "Generalized Linear Models"
+author: "Luke Ghallahorne"
+date: "2023-11-30"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: united
+  word_document:
+    toc: yes
+    toc_depth: '3'
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_Generalized_Linear_Models/Data')
+```
+
+```{r library, include = FALSE}
+library(knitr)
+library(tidyverse)
+library(readr)
+library(GGally)
+library(cowplot)
+library(interactions)
+getwd()
+```
+
+## An example with count data.
+
+Let’s assume you have been counting fish on coral reefs. So your data are count data. If the counts are large they may well look pretty normal. But there are some important characteristics of count data: Counts are integers, whereas the normal distribution is for continuous data that can include any fraction. Counts also can’t be less than zero, but the normal distribution models stochastic processes that draw both zeros and negative numbers. While a count can be 0, it cannot be negative.
+
+Statisticians have described many distributions for counts but one of the simplest is the Poisson distribution. It is a model of positive integers. It has one parameter λ, which is both its mean and variance. Let’s see what that looks like with some simple R code to draw random numbers from two Poisson distributions:
+
+```{r}
+n <-1000
+set.seed(42)
+x1 <- rpois(n, lambda = 1)
+x10 <- rpois (n, lambda = 10)
+mean(x1)
+```
+```{r}
+var(x1)
+```
+```{r}
+mean(x10)
+```
+```{r}
+var(x10)
+```
+
+We just sampled random numbers from two Poisson distributions with means of 1 and 10. Notice that the means and variances of each are approximately equal (not exactly equal because of we drew a small random sample). You can think of this sampling from the Poisson as a model of count data. Let’s see what the distributions look like:
+
+```{r}
+par(mfrow=c(1,2))
+hist(x1, xlim = c(0,25), seq(0,25, by = 1))
+hist(x10, xlim = c(0,25), seq(0,25, by = 1))
+
+```
+
+If lambda is 1 what do you find? What about if lambda is 10?
+
+* When lambda is 1, the distribution is greatest from 0 to 1 then decreases exponentially. When lambda is 10, the distribution starts to resemble a normal distribution.
+
+So far our Poisson model only has one parameter, a mean (and variance) we refer to as λ. But what if we wanted the mean to change? For instance, we might have counted fish on different types of coral reefs and we want to test whether there are different abundances on each type of reef. Or we might have counted fish across a gradient of pollution and we want to know how their numbers change from low to high pollution. We will call these hypothesized causes of changes in fish counts ‘covariates’. Others might call them explanatory variables, treatments (if experiments) or predictor variables.
+
+We will use Generalized Linear Models, so we could include the covariates as variables in a linear equation, after all that is what we do with linear regression (and general linear models).
+
+Y∼β0+Xβ1+ϵ
+or Y=a+B*X for simplicity below.
+
+Let’s generate some sample data ourselves. We will assume pollution is measured on a zero to one (low to high) scale, and that the mean number of fish with no pollution (0) = 4 and that on average there are no fish when pollution level = 0.5 (half the maximum).
+
+```{r}
+n <- 50
+beta <- -8 #effect of polluted reefs
+alpha <- 4 #intercept = mean at 'zero' pollution
+x <- seq(0,1, length.out = n) #pollution levels
+ymean <- alpha + beta*x # This is Y=mx+b formulation for simplicity, but think of this as Y(fish count) ~ B0 + B1(pollution) + E
+plot(x, ymean, type = "l", xlab = "Pollution Level", ylab ="Number of Fish Counted")
+abline(h = 0, lty = 2, lwd = 2)
+
+```
+
+There is something odd about this model: we are predicting negative fish (on average) for pollution levels over 0.5.
+
+It gets even worse if we model sampling with a normal distribution:
+
+```{r}
+set.seed(55)
+yobs_normal <- ymean + rnorm(n) #Here we're adding random variation to the mean, using the mean count above
+plot(x, ymean, type = "l", xlab = "Pollution Level", ylab = "Number of Fish Counted")
+points(x, yobs_normal)
+abline(h = 0, lty = 2, lwd = 2)
+```
+
+## Generalized Linear Models
+Link functions elegantly solve the problem of using linear models with non-normal data. There are many types of link functions, but we will look at one that is popular for use with cound data: log.
+
+```{r}
+gamma <- -3.2 # Effect of polluted reefs (equivalent to B1, or B) for illustration
+alpha <- 4 # Intercept = mean at 'zero' pollution
+yexp <- alpha * exp(gamma*x)
+plot(x, yexp, type = "l", xlab = "Pollution Level", ylab = "Number of Fish Counted")
+abline(h = 0, lty = 2, lwd = 2)
+```
+
+Here we have the equation $y = \alpha * e^{(\gamma* x)}$ which is the same as the linear equation for log(y): $\log(y) = \log(\alpha)+\gamma *x$. Note we retained alpha=4 in both, because for both equations alpha is the expected value at pollution of zero.
+
+The slope parameter was changed in the log-linear equation to gamma because it is not a direct analogue of our slope parameter beta above.
+
+One of the nice things about the log-linear equation is that the slope parameter now represents multiples of change. For instance, gamma = -3.2 means the abundance declines about 25 times (=1/exp(-3.2)) when going from a pollution level of 0 to 1. Abundance declines about a five times decline if we go from a pollution of 0 to 0.5 (= 1/exp(-3.2*0.5)).
+
+Now we can use this exponential curve as the mean (and variance!) of a Poisson distribution.
+
+```{r}
+yobs_pois <- rpois(n, yexp) #As we drew random numbers from a normal distribution, we will draw them from a Poisson distribution.
+# You can look up rpois() if you don't know what this function is doing
+plot(x, yexp, type = "l", xlab = "Pollution Level", ylab = "Number of Fish Counted", ylim = c(0, 8))
+points(x, yobs_pois)
+```
+
+Note that the fish counts are all positive. And, as the means get smaller, the variance also gets smaller (this is the idea behind using lambda as a single measurement).
+
+In the above example we made up the “true” population mean for the purposes of explanation. But in the real world, we sample and hope our sample is a good enough representation of the population to draw inference.
+
+
+## Fitting the GzLM
+Since we introduced some random variability into our generated data, we can pretend like the above was a “sample”. We can now use a generalized linear model to estimate the effect of the pollution covariate using R’s glm() function. The syntax is pretty much the same as with lm() but we now specify the family and link function to use for fitting that third component of the model characteristic of generalized linear models (in addition to the random (Ys) and systematic (Xs) components).
+
+```{r}
+m1 <- glm (yobs_pois ~ x, family = poisson(link = "log"))
+summary(m1)
+coef(m1)
+```
+
+The values we printed give the estimates for the intercept and slope coefficients (alpha and gamma). How do these relate to the input data for (log)alpha and gamma?
+
+We have specified above the type of distribution to use (family = poission()) and which link to use. “log” is in fact the default choice, but I put it there so you know you can change it.
+
+Technically we would say we fit a Generalized Linear Model with Poisson errors and a log link function. We talk about Poisson errors (not Poisson data), because it is the leftover variation after we fit the model (i.e., the error or residuals) that we are assuming is Poisson distributed, in the same way we assume normally distributed residuals with a Gaussian distribution.
+
+The model actually doesn’t make any assumptions about how the raw data are distributed, so long as they are integers and non-negative. Note that the data can contain zeros, but the mean of the Poisson is always >0.
+
+What do the coefficients mean? Remember the coefficients are on the log scale. So the mean abundance at a pollution level of zero = the exponentiated value of the intercept and a change in pollution from 0 to 1 causes an estimated slope of 1/exp(slope) times decline in fish abundance. You can check these numbers with the math below.
+
+```{r}
+exp(coef(m1)[1]) #Very close to 4, as set up in our data generation
+```
+
+```{r}
+1/exp(coef(m1)[2]) #Similar to the 25 times decline mentioned above
+```
+
+We can plot the fitted model with standard errors along with our "true mean" from our simulated data.
+
+```{r}
+ypredict <- predict (m1, type = "response", se = TRUE)
+plot(x, yexp, type = "l",
+     xlab = "Pollution Level",
+     ylab = "Number of Fish Counted",
+     ylim = c(0,8))
+lines(x, ypredict$fit, lwd = 2, col = "red", lty = 2)
+  # Add lines for standard errors
+lines(x, ypredict$fit + ypredict$se.fit, lty = 3, col = "red") #Pull the SE out of the predicted values
+lines(x, ypredict$fit - ypredict$se.fit, lty = 3, col = "red")
+  # Plot observations
+points(x, yobs_pois)
+legend("topright", legend = c("True Mean", "Estimated Mean"), lwd = 2, lty = c(1,2), col = c("black", "red"))
+```
+
+You can see the fitted line falls close to the ‘true’ line, and the standard errors are pretty tight around our best estimate.
+
+The fitting algorithm itself is attempting the maximize the log-likelihood of the sample mean given the observations (in technical speak). You can refresh your understanding of maximum likelihood estimation if needed.
+
+We wanted to fit a linear function to data that can’t be less than zero, because linear functions are convenient to work with. So we used a log link function to describe the mean and to ensure that the mean is always greater than zero.We ended up with a model where the slope describes multiples of change in fish abundance over the pollution gradient. So the model itself is actually multiplicative, not additive.
+
+If you think about it, natural processes that generate counts often are multiplicative, not additive. For instance, we may talk about ‘fish multiplying’ when they breed, because population growth can be exponential.
+
+So our mathematically convenient link function actually ended up being a better description of the natural process.
+
+The last thing we want to check is if our residuals are Poisson distributed (an assumption of a GzLM with a Poisson distributional family). What this means for Pearson residuals (residual divided by the square root for the variance) is that they have constant spread, just like the normal residuals. Examining the residuals for these models is more complicated in reality, and if you end up down this road, you can evaluate it further.
+
+```{r}
+plot(m1)
+```
+
+
+## To Transform or to use GzLM?
+What’s the difference between a log link and log transforming your data? The answer is insightful as to how link functions work.
+
+Take the data we generated above and fit two GLMs (you will have to add a small number–kludge factor–so you can log the zeros, not ideal but a common practice).
+
+```{r}
+yobsplus <- yobs_pois + 0.1
+model1 <- glm(yobsplus ~ x, family = gaussian(link = "log"))
+model2 <- glm(log(yobsplus) ~ x, family = gaussian(link = "identity"))
+summary(model1)
+```
+
+```{r}
+summary(model2)
+```
+
+In the first model we fitted a Gaussian distribution (normally distributed errors) with a log link. In the second we fitted a Gaussian distribution to logged response variable (log(y)) with the identity link (which is no link, just functionally an lm).
+
+Now compare the results. Notice that the estimate of the slope is quite different. Why is this?
+
+```{r}
+ypredict1 <- predict(model1, type = "response", se = TRUE)
+ypredict2 <- predict(model2, type = "response", se = TRUE)
+plot(x, yexp, type = "l",
+     xlab = "Pollution Level",
+     ylab = "Number of Fish Counted",
+     ylim = c(-2,8))
+lines(x, ypredict1$fit, lwd = 2, col = "red", lty = 2)
+lines(x, ypredict2$fit, lwd = 2, col = "blue", lty = 2)
+  # Add lines for standard errors
+lines(x, ypredict1$fit + ypredict$se.fit, lty = 3, col = "red") #Pull the SE out of the predicted values
+lines(x, ypredict1$fit - ypredict$se.fit, lty = 3, col = "red")
+
+lines(x, ypredict2$fit + ypredict$se.fit, lty = 3, col = "blue") #Pull the SE out of the predicted values
+lines(x, ypredict2$fit - ypredict$se.fit, lty = 3, col = "blue")
+
+  # Plot observations
+
+points(x, yobs_pois)
+```
+
+
+The model with the log link is fitting the mean on the log scale, the Gaussian errors will be on the natural scale. So the residual (or error) variance will be constant for all mean values of y.
+
+The model with the log of the data and identity link is fitting the mean and variance on the log scale. So if we retransform log(y) back to y (exponentiate it), the variance will change with the mean.
+
+So a log link isn’t the same as a log transformation. The transformation changes the raw data. The link function doesn’t touch the raw data, instead you can think of it as a transformation of the model for the mean of the raw data.
+
+
+## Presence/Absence: A Binomial Response
+In the 1980s a group of researchers did groundbreaking work on ecosystem subsidies looking at spiders on island ecosystems. As part of an investigation controlling spider populations on these islands, Polis et. al. (1988) recorded the physical and biological characteristics of islands in the Gulf of California. One of the outcomes was an analysis of a spider predator (Uta lizard) presence/absence (PA). The predictor was island perimeter to area ratio (RATIO). Because the response variable (Uta lizard presence/absence) is binary, the data are non-normal and we cannot use a lm. Conduct a logistic regression to determine if perimeter:area ratio is a good predictor of presence/absence of Uta lizards.
+
+Explore the data on your own. Fit an appropriate model (see code below). Plot expected outcomes. (There are some chunks of code below to help you along with some of the details.)
+
+```{r}
+
+polis <- read_csv("Data/polis.csv")
+head(polis)
+```
+
+When you build your model, name it polis.glm which will facilitate some of the steps below. To fit the logistic regression, we use the glm function and the family=“” argument, where family=“binomial” to account for the binary nature of the data. What is the canonical link for the binomial family? If you don’t know, you can use the help to look up the family argument. Besides the different function, glm() that is used to fit generalized linear models, the fitting syntax is pretty much the same as with lm().
+
+```{r }
+# ?family
+```
+
+Binomial link = "logit"
+
+Fit a binomial glm for PA~RATIO.
+
+```{r}
+polis.glm <- glm(PA ~ RATIO, data = polis, family = binomial(link = "logit"))
+summary(polis.glm)
+```
+
+
+Just like for lm() and glm() with a Poisson distribution as above, we see we get some output related to the intercept and slope. Here the “slope” (which is actually the log-odds ratio) uses the z statistic (the standard normal deviate) to check for differences from 0. The z value is the ratio of the estimated coefficient to its standard error. It measures the number of standard deviations that the estimated coefficient is away from zero. A higher absolute value of z value indicates that the estimated coefficient is more statistically significant. Here, it’s a little more than 2 sd away from zero, which means the probability is <0.05. Indeed, the p-value is 0.029.
+
+Interpretation of logistic regression is not as straightforward as other forms of regression because the concept of the slope is different. Here, we have a presence (1) or absence (0) and we’re trying to find the level of the predictor at which we are more likely to have one or the other (the probability of getting a 1 vs a 0 is typically set at the 50% point). The standard logistic regression function for predicting the outcome of an observation given a predictor variable (x), is an s-shaped curve defined as p = exp(y) / [1 + exp(y)]. So, the model estimates a “slope” but it is really the log-odds ratio. There is more information here, or in any advanced modeling book, should you need to go down this road.
+
+So, we can say that Perimeter to Area Ratio (RATIO) is a significant predictor of Uta Lizard presence and that the probability of lizard presence decreases with increasing perimeter:area ratio (-0.22), where the regression equation is defined as p = exp(3.61 -0.21* RATIO)/ [1 + exp(3.61 -0.21* RATIO)].
+
+We can calculate the predicted values based on the fitted model (make sure you know what each step is doing here).
+
+```{r}
+# Create a new data frame on which to make predictions
+xs <- data.frame(RATIO = seq(0,70, length.out = 1000))
+polis.predict <- predict (polis.glm, type = "response", se.fit = TRUE, newdata = xs)
+
+
+polis.predict <- data.frame(c(xs, polis.predict))
+head(polis.predict)
+# To get the confidence intervals, you will need to calculate the fit for each point + the SE for each points - this can be vectorized:
+# e.g. to get the upper confidence band
+upper <- polis.predict$fit + polis.predict$fit~xs$RATIO
+#upper2 <- polis.predict$fit + polis.predict$se.fit
+upper
+
+```
+We can generate a plot using base R, top, or ggplot, bottom, which will hopefully make this more clear.
+
+```{r}
+
+  ggplot(aes(x = polis.predict$RATIO), data = polis.predict) +
+  geom_smooth(aes(y =  polis.predict$fit)) +
+  geom_smooth(aes(y = (polis.predict$fit + polis.predict$se.fit)), lty = 3, col = "purple") +
+  geom_smooth(aes(y = (polis.predict$fit - polis.predict$se.fit)), lty = 3, col = "purple") +
+  geom_point(data = polis, x = polis$RATIO, y = polis$PA, size = 2) +
+  xlab("Island Perimeter to Area Ratio") +
+  ylab("Presence/Absence of Uta Lizard") 
+```
+
+So, when the Perimeter to Area Ratio hits about 18, the expected presence of Uta Lizards drops off.
+
+There are a few other things we might want to assess:
+
+Overdispersion: the variance of the response is greater than what's assumed by the model. This is more of a problem in Poisson-type models, but I demonstrate the code here.
+
+
+```{r}
+# To calculate Pearson chi^2 p-value to evaluate dispersion (overdispersion):
+
+pp <- sum(resid(polis.glm, type = "pearson")^2)
+1-pchisq(pp, polis.glm$df.residual)
+```
+
+0.57 is a very very high p-value: no overdispersion.
+
+
+```{r}
+# To calculate deviance (G^2)
+1 - pchisq(polis.glm$deviance, polis.glm$df.residual)
+```
+
+```{r}
+#To evaluate the strength of the association (R^2 equivalent, but remember it is not really R^2 because we are not using squared error)
+1-(polis.glm$dev/polis.glm$null)
+```
+## HW
+
+### Problem
+Follow the example in Zuur et al. 2009 regarding roadkills. The data set consists of amphibian roadkills at 52 sites along a road in Portugal. Using the roadkills data, you will model the number of amphibian roadkills (TOT.N) using the explanatory variables: distance to the natural park (D.PARK), montado with shrubs (MONT.S), polyculture (POLIC), and distance to water reservoirs (D.WAT.RES). You should decide between assuming a normal distribution or a Poisson distribution and fit the appropriate model.
+
+Go through the normal steps to evaluate your data, assess model assumptions, fit model(s), select the best fitting model, and plot your outcomes, with a conclusion stated in plan language about what you find.
+
+You may use the reference for guidance. While this dataset is used as an example, the particular covariates are not necessarily used in combination; nevertheless you can use the process and steps provided to work your way through fitting and evaluating a model. Some functions may have changed since the publication of the book.
+
+
+#### Assessing assumptions.
+
+```{r include = FALSE}
+roadkill <- read.csv("roadkills.csv")
+head(roadkill)
+summary(roadkill)
+```
+
+```{r echo = FALSE}
+roadkill.sub <- roadkill[,c("TOT.N", "D.PARK", "MONT.S", "POLIC", "D.WAT.RES")]
+ggpairs(data = roadkill.sub)
+```
+
+```{r echo = FALSE}
+par(mfrow=c(2,3))
+hist(roadkill$TOT.N, main = "Total Roadkills")
+hist(roadkill$D.PARK, main = "Distance to Natural Park")
+hist(roadkill$MONT.S, main = "Montado with Shrub")
+hist(roadkill$POLIC, main = "Polyculture")
+hist(roadkill$D.WAT.RES, main = "Distance to Water Reservoirs")
+```
+
+A couple of variables, namely distance to the natural park (D.PARK) and distance to water reservoirs (D.WAT.RES), appear to be roughly normally distributed. However, montado with shrubs (MONT.S) and polyculture (POLIC) are much more indicative of a Poisson distribution with a low lambda. All variables are greater than or equal to zero in their values, and moreover, the response variable is count data, so a Poisson distribution is the most appropriate for the model.
+
+
+```{r include = FALSE}
+c1 <- cor.test(roadkill$D.PARK, roadkill$D.WAT.RES)
+head(c1)
+c2 <- cor.test(roadkill$POLIC, roadkill$D.WAT.RES)
+c3 <- cor.test(roadkill$D.PARK, roadkill$POLIC)
+
+```
+
+```{r echo = FALSE}
+variables <- c("D.PARK*D.WAT.RES", "POLIC*D.WAT.RES", "D.PARK*POLIC")
+r <- c(c1$estimate, c2$estimate, c3$estimate)
+t.stat <- c(c1$statistic, c2$statistic, c3$statistic)
+p.value <- c(c1$p.value, c2$p.value, c3$p.value)
+roadkill.corr2 <- data.frame(variables, r, t.stat, p.value)
+kable(roadkill.corr2)
+```
+
+
+Three explanatory variables are significantly correlated with each other: distance to water reservoirs, distance to natural park, and polyculture. Since only one interaction - between distance to water reservoirs and distance to natural park - has a correlation coefficient greater than 0.5, I will include just that interaction in the initial model.
+
+For a GLM, variance does not need to be equal (and usually cannot be).
+
+#### Fitting the model.
+
+I first fit a Generalized Linear Model with Poisson errors.
+
+```{r}
+roadkill.glm <- glm(TOT.N ~ MONT.S + POLIC + D.PARK*D.WAT.RES, data = roadkill, family = poisson)
+summary(roadkill.glm)
+
+```
+Three of the four explanatory variables are significant in the model: montado with shrubs ($z=42.75, p<0.001$), distance to natural park ($z=-10.55, p<0.001$), and distance to water reservoirs ($z=4.73, p<0.001$). The interaction between distance to natural park and distance to water reservoirs was also significant ($z=-2.67, p<0.008$). Polyculture did not contribute significantly to the model ($z=0.82, p<0.41$).
+
+#### Model selection.
+
+I made models including all main effects and with interactions between correlated variables, then used AIC comparison to select the best fit. I used the drop1 function on the model with no interactions, and manually created models with variations of interacting variables. After testing models with polyculture interactions, I dropped it from subsequent models as it had no significant effect in the original model.
+
+```{r include = FALSE}
+m1 <- glm(TOT.N ~ MONT.S + POLIC + D.PARK*D.WAT.RES, data = roadkill, family = poisson)
+m2 <- glm(TOT.N ~ MONT.S + POLIC + D.PARK + D.WAT.RES, data = roadkill, family = poisson)
+drop1(m2)
+m3 <- glm(TOT.N ~ MONT.S + POLIC*D.PARK*D.WAT.RES, data = roadkill, family = poisson)
+m4 <- glm(TOT.N ~ MONT.S + POLIC*D.PARK + D.WAT.RES, data = roadkill, family = poisson)
+m5 <- glm(TOT.N ~ MONT.S + POLIC*D.WAT.RES + D.PARK, data = roadkill, family = poisson)
+m6 <- glm(TOT.N ~ MONT.S + D.PARK*D.WAT.RES, data = roadkill, family = poisson)
+m7 <- glm(TOT.N ~ D.PARK*D.WAT.RES, data = roadkill, family = poisson)
+m8 <- glm(TOT.N ~ MONT.S + D.WAT.RES, data = roadkill, family = poisson)
+m9 <- glm(TOT.N ~ MONT.S + D.PARK, data = roadkill, family = poisson)
+```
+
+
+```{r echo = FALSE}
+roadkill.aic<-AIC(m1, m2, m3, m4, m5, m6, m7, m8, m9)
+formula <- c("TOT.N ~ MONT.S + POLIC + D.PARK * D.WAT.RES",
+             "TOT.N ~ MONT.S + POLIC + D.PARK + D.WAT.RES",
+             "TOT.N ~ MONT.S + POLIC * D.PARK * D.WAT.RES",
+             "TOT.N ~ MONT.S + POLIC * D.PARK + D.WAT.RES",
+             "TOT.N ~ MONT.S + POLIC * D.WAT.RES + D.PARK",
+             "TOT.N ~ MONT.S + D.PARK * D.WAT.RES", 
+             "TOT.N ~ D.PARK * D.WAT.RES", 
+             "TOT.N ~ MONT.S + D.WAT.RES", 
+             "TOT.N ~ MONT.S + D.PARK")
+roadkill.aic<- data.frame(roadkill.aic, formula)
+kable(roadkill.aic)
+```
+
+Through AIC comparisson, model "m3" - $TOT.N \sim MONT.S + POLIC * D.PARK * D.WAT.RES$ - is the best fit for the data (AIC = 493.44). This model includes interactions between distance to natural park, distance to water reservoirs, and polyculture.
+
+```{r echo = FALSE}
+summary(m3)
+# coef(summary(m3))[,4]
+m3_table <- data.frame(coef(summary(m3)))
+# m3_table
+kable(m3_table)
+# anova(m3)
+```
+
+```{r include = FALSE}
+
+# summary(roadkill)
+
+#roadkill.new <- data.frame (MONT.S = seq(0, 9.426, length.out = 1000), D.PARK = seq(250.2, 24884.8, length.out = 1000), D.WAT.RES = seq(59.17, 1883.00, length.out = 1000))
+
+
+# summary(roadkill.new)
+```
+
+```{r echo = FALSE, message = FALSE}
+#roadkill.pred <- predict(m3, type = "response", se.fit = TRUE, newdata = roadkill.new)
+#roadkill.predict <- data.frame(roadkill.pred, roadkill.new)
+#summary(roadkill.predict)
+
+rk.pred2 <- predict(m3, type = "response", se = TRUE)
+# rk.pred2
+
+plot_DPARK <- ggplot()+
+  geom_point(data = roadkill, aes(D.PARK, TOT.N))+
+  geom_smooth(aes(roadkill$D.PARK, rk.pred2$fit), se = FALSE, col = "turquoise3") +
+  geom_smooth(aes(roadkill$D.PARK, (rk.pred2$fit + rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  geom_smooth(aes(roadkill$D.PARK, (rk.pred2$fit - rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  labs(tag = "A", x = "Distance to Natural Park", y = "Total Roadkills") 
+
+plot_DWATRES <- ggplot()+
+  geom_point(data = roadkill, aes(D.WAT.RES, TOT.N))+
+  geom_smooth(aes(roadkill$D.WAT.RES, rk.pred2$fit), se = FALSE, col = "turquoise3") +
+  geom_smooth(aes(roadkill$D.WAT.RES, (rk.pred2$fit + rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  geom_smooth(aes(roadkill$D.WAT.RES, (rk.pred2$fit - rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  labs(tag = "B", x = "Distance to Water Reservoirs", y = "Total Roadkills")
+
+plot_MONTS <- ggplot()+
+  geom_point(data = roadkill, aes(MONT.S, TOT.N))+
+  geom_smooth(aes(roadkill$MONT.S, rk.pred2$fit), se = FALSE, col = "turquoise3") +
+  geom_smooth(aes(roadkill$MONT.S, (rk.pred2$fit + rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  geom_smooth(aes(roadkill$MONT.S, (rk.pred2$fit - rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  labs(tag = "C", x = "Montado with Shrubs", y = "Total Roadkills")
+
+plot_POLIC <- ggplot()+
+  geom_point(data = roadkill, aes(POLIC, TOT.N))+
+  geom_smooth(aes(roadkill$POLIC, rk.pred2$fit), se = FALSE, col = "turquoise3") +
+  geom_smooth(aes(roadkill$POLIC, (rk.pred2$fit + rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  geom_smooth(aes(roadkill$POLIC, (rk.pred2$fit - rk.pred2$se.fit)), 
+              se = FALSE, lty = 2, col = "turquoise") +
+  labs(tag = "D", x = "Polyculture", y = "Total Roadkills")
+
+
+plot_grid(plot_DPARK, plot_DWATRES, plot_MONTS, plot_POLIC)
+
+```
+
+Plots show real data (black points) with each main effect on the x axis. Green lines show the model predictions, +/- standard error. 
+
+
+```{r echo = FALSE, fig.asp=1}
+#interact_plot(m3, pred = D.WAT.RES, modx = D.PARK) 
+EP <- resid(m3, type = "pearson")
+ED <- resid (m3, type = "deviance")
+mu <- predict(m3, type = "response")
+E <- roadkill$TOT.N - mu
+# EP2 <- E / sqrt()
+par(mfrow = c(2,2))
+plot (x = mu, y = E, main = "Response residuals")
+plot (x = mu, y = EP, main = "Pearson residuals")
+plot (x = mu, y = ED, main = "Deviance residuals")
+
+```
+
+```{r fig.asp = 1, echo = FALSE, warning = FALSE}
+
+par(mfrow= c(2,2))
+plot(m3)
+```
+There don't appear to be any strong patterns in the residuals.
+
+Total number of amphibian roadkills is best predicted by a generalized linear model with main effects of montado with shrubs, distance to natural park, distance to water reservoirs, and polyculture, with interaction terms for the latter three variables. The log-likelihood of roadkills generally decreases with increased distance to natural parks or water reservoirs, and increases then decreases as polyculture and montado with shrubs increase.
+
+I understand I need to compare the Pearson and deviance residuals to the fitted values and the explanatory variables to look for patterns, but I cannot figure out how to calculate the dispersion parameter, which I need to calculate the scaled Pearson residuals.
+
+### Concept
+Explain why generalized linear models are preferred to transformations. You must use your own words to describe this, but feel free to consult sources (just be sure to cite them, where relevant).
+
+<br>
+
+While transformations of explanatory variables can easily allow for simpler linear models, generalized linear models are often more flexible and interpretable than transformed data. For one, if an explanatory variable is categorical, it is difficult to transform the data, especially if the categories are non-sequential in nature. Transformed data can be hard to interpret, especially if there are multiple explanatory variables, and their relation to the response variable can be unclear. Furthermore, not all violations of normality in errors of data can be corrected with simple transformations.
+
+Using generalized linear models allows for only a single transformation - that of the model with the explanatory variables to the output of the response variable. Therefore, we can use input data in its original state, regardless of distribution or homoskedasticity, and use a probability distribution appropriate to the response variable to translate the model into the correct scale.
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,235 @@
+---
+title: 'Assignment 5: PCA'
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning=FALSE}
+library(tidyverse)
+library(vegan)
+library(GGally)
+library(corrplot)
+ #Did not ultimately use corrplot package but kept for reference in future.
+library(biotools)
+
+```
+
+
+# Introduction
+
+The data I am examining contain nine measurements of canine skulls from 5 related groups, separated further by sex (M/F). The group of particular interest to the study was prehistoric dogs from Thailand (whose sexes are unknown). Researchers wanted to investigate if skull shape was more or less similar between prehistoric dogs and modern groups.
+
+Here, I investigate the question of **whether canine groups differ in skull shape**, and if so, **does sex influence group similarities/differences?** As the sexes of the prehistoric dogs are unknown, I will examine males and females from other groups to see if prehistoric dogs are more like one or the other.
+
+# Methods
+
+## Data Summary.
+
+### Data Structure.
+First I loaded the data and examined the structure of variables.
+```{r}
+# Loading data
+dogs <- read.csv("Data/mandibles.csv", stringsAsFactors = TRUE)
+# Summary statistics - mean, median, min, max, quartiles
+summary(dogs)
+# Saving Sex as a factor instead of number
+dogs$Sex <- as.factor(dogs$Sex)
+# Structure of dataframe
+str(dogs)
+```
+
+There are nine response variables of various measurements, three groups for sex, and five animal groups, as follows:
+
+Response Variables:
+
+- X1: length of mandible
+- X2: breadth of mandible below 1st molar
+- X3: breadth of articular condyle
+- X4: height of mandible below 1st molar
+- X5: length of 1st molar
+- X6: breadth of 1st molar
+- X7: length of 1st to 3rd molar inclusive (1st to 2nd for cuon)
+- X8: length from 1st to 4th premolar inclusive
+- X9: breadth of lower canine
+
+Groups:
+
+- cuons: cuons, n = 17
+- jack: golden jackals, n = 20
+- m_dogs: modern Thai dogs, n = 16
+- p_dogs: prehistoric Thai dogs, n = 10
+- wolves: Indian wolves, n = 14
+
+Sex:
+
+- Male
+- Female
+- Unknown (all Prehistoric Thai dog skulls are classified as unknown, as the sex of the animal is not certain).
+
+### Data Distribution and Correlation. {.tabset}
+
+#### Canine Groups.
+
+```{r message = FALSE, warning = FALSE}
+#dogs.corr <- cor(dogs[,-c(1:3,13)])
+#corrplot(dogs.corr, type = "upper")
+# Decided not to use corrplot here, as it would require a plot for each group, and instead I kept with the ggpairs default output. Kept here for reference in the future.
+
+# Pairs plot of response variables, grouped by Canine Group
+ggpairs(dogs[,-c(1:3,13)], aes(col = dogs$G_name)) 
+```
+
+#### Sex.
+
+```{r message = FALSE, warning = FALSE}
+# Pairs plot of response variables, grouped by Sex
+ggpairs(dogs[,-c(1:3,13)], aes(col = dogs$Sex)) 
+```
+
+### 
+
+The response variables are all roughly normally distributed when grouped by canine group (1) and by sex (2), as seen in the colored distribution plots (diagonals) and the elliptical shape of points on bivariate graphs (lower diagonals). There are a few bimodal exceptions, such as X7, but for the most part there are not any stark divergences from normality. Upper diagonal plots show the Pearson's correlation coefficients among variables - all are highly correlated, with most r values between 0.3 and 0.9.
+
+Our response variables being correlated is not surprising, as they are all measurements of different parts of canine jaws. The correlation justifies the use of multivariate methods to analyze similarities in jaw shape. 
+
+### Principle Components Analysis (PCA).
+
+These data have a large number of response variables that each describe similar characteristics (i.e., different measurements of skull shape) and are closely correlated with one another. A Principle Components Analysis (PCA) is a good way to visualize the data in fewer dimensions while still retaining the relevant information to distinguish groups. Since there are 9 variables, there will be 9 Principle Components, but the first 2 or 3 will likely explain the majority of the variation in the data.
+
+I will begin by standardizing the data to z-scores and finding the covariance matrix of the standardized values (i.e., the correlation matrix of the untransformed data). Using the prcomp() function, I will use singular value decomposition to produce the eigenvectors (PCs) and eigenvalues (variance) of the covariance matrix. I will use the eigenvectors with the largest associated eigenvalues, as they explain the greatest proportion of the variance in the data. I will verify that the PCA summarizes the data appropriately by examining the screeplot, which shows the diminishing returns of variance explained by each additional principle component beyond the previous.
+
+To determine how the PCs are loaded, I will examine the eigenvectors and assess the value and direction (positive or negative) of each variable. This provides information on which variables are contributing to each PC, and how they are interacting with other variables. 
+
+Finally, I will use the PC scores from the first 2 or 3 PCs to create ordination plots of the data to look for visual patterns among canine groups and sex. 
+
+If time permits, I will run a Null Hypothesis Significance Test (NHST) to determine skull shape differs among groups. If the data satisfy the assumptions, I will conduct a MANOVA - otherwise, I will use PERMANOVA.
+
+
+### NHST.
+
+Since the data are approximately normal, I tested for equal dispersion with Box's M tests for homogeneity of covariance matrices, with group and sex.
+
+```{r}
+# Box's M
+dogs.Mgroup <- boxM(data = dogs[,-c(1:3, 13)], group = dogs[,3])
+dogs.Mgroup
+```
+
+```{r}
+# Box's M
+dogs.Msex <- boxM(data = dogs[,-c(1:3, 13)], group = dogs[,13])
+dogs.Msex
+```
+
+Both when grouped by sex and canine group, I rejected the null hypothesis of equal covariance matrices (sex: approx. $\chi^2$~180~ = 263, p < 0.001, group: approx. $\chi^2$~90 = 151, p < 0.001). Thus, these data do not have equal dispersion and do not satisfy the assumptions of a MANOVA. 
+
+# Results
+## PCA
+```{r}
+dogs.pca <- prcomp(dogs[,-c(1:3,13)], scale = TRUE)
+summary(dogs.pca)
+dogs.pca$rotation
+```
+
+A summary of the PCA shows the standard deviation and proportion of variance explained by each of the 9 principle components. PC1 explains a large majority of the variance in the dataset - 80.9% - and has roughly equal, positive loading for all 9 variables, with a range of 0.277 (X7) to 0.359 (X1). 
+
+The second PC explains a further 8.1% of the variance in skull shape but weights four variables positively (X1, X5, X7, and X8) and the other five negatively (X2, X3, X4, X6, and X9). 
+
+```{r}
+# Calculating proportion of variance
+foo<- eigenvals(dogs.pca)/sum(eigenvals(dogs.pca))
+
+# Screeplot
+plot(foo, type = "l",
+     ylab = "Proportion of Variance Explained",
+     xlab = "Principle Component")
+points(foo, pch = 21, bg = "white")
+```
+
+A scree plot of the proportion of variance explained by each principle component shows the diminishing returns as each principle component is included. The majority of variance can be shown with PC1, with a smaller portion explained by PC2, and the remaining 10% spread across PCs 3 through 9.
+
+```{r}
+biplot(dogs.pca)
+```
+
+The biplot of PCs 1 and 2 visualizes how the loadings are weighted for each variable in the first two principle components. All variables are weighted together in the first PC to similar degrees, while in PC2, more contrast in some variable vs others is represented by the positive and negative loading of different variables.
+
+```{r}
+dogs.pca$rotation[,1:2]
+```
+
+The original datapoints can be translated into scores for the principle components using the eigenvector components as the coefficients for the PC score equations and the z-scores for each variable:
+
+Eq. 2:
+$$Z_1 = 0.359*X1+0.338X_2+0.315X_3+0.322X_4+0.349X_5+0.341X_6+0.277X_7+0.341X_8+0.350X_9$$
+
+For PC1, all variables are weighted positively and between 0.27 and 0.36. This reflects the strong correlation between our response variables, as one measurement of a jaw is likely to change in accordance with other jaw measurements.
+
+Eq. 2:
+$$Z_2 = 0.111X_1-0.305X_2-0.298X_3-0.425X_4+0.136X_5-0.066X_6+0.716X_7+0.289X_8-0.077X_9$$
+
+PC2 shows more contrast between our variables, loading four positively (length of mandible, length of 1st molar, length of 1st to 3rd molar, and length from 1st to 4th premolar) and five variables negatively (breadth of mandible, breadth of articular condyle, height of mandible, breadth of 1st molar, and breadth of lower canine). Therefore, PC2 is highlighting the variation between length measurements of the jaw and breadth/height measurements. Unlike PC1, not all variables are weighted equally, but X7 (length of 1st to 3rd premolar) and X4 (height of mandible) are more heavily loaded than other variables.
+
+## Ordination Plots
+
+### Canine Group + Sex
+
+```{r}
+# Creating dataframe of PC1 and PC2 to plot.
+dogs.plot.df <- data.frame(Group = dogs$G_name,
+                           Sex = dogs$Sex,
+                           PC1 = dogs.pca$x[,1],
+                           PC2 = dogs.pca$x[,2])
+
+# Constructing ordination plot.
+dogs.plot <- dogs.plot.df |>
+  ggplot(aes(x = PC1, y = PC2, color = Group, shape = Sex)) +
+  geom_point()
+dogs.plot
+```
+
+PCA plot for first two principle components (PC1 = 80.9% of variation, PC2 = 8.1% of variation). Cuons, jackals, and wolves appear quite distinct in skull shape from one another and from Thai dogs, grouping into distinct regions, but there is a fair amount of overlap for modern Thai dogs and prehistoric dogs. Jackals and wolves have the greatest contrast along PC1, which implies from the equation for PC1 scores (Eq. 1) that those two group differ most in overall skull shape, since PC1 loads all variables roughly evenly. Similarly, cuons differ the most from the other four groups long PC2, which highlights the differences between height and breadth measurements (Eq. 2). Within some species, most notably Indian wolves, sex has a slight difference in both PC1 and less so in PC2. A NHST would be necessary to determine if it these apparent differences are significant, as they are only slight patterns.
+
+I created a separate plot colored by sex alone to better visualize any grouping across species.
+
+### Sex Only
+
+```{r}
+dogs.plot2 <- dogs.plot.df |>
+  ggplot(aes(x = PC1, y = PC2, color = Sex, shape = Sex)) +
+  geom_point()
+dogs.plot2
+```
+
+Male and female skull shapes do not appear to differ across all dog types nor within types. Prehistoric dogs (sex unknown) have a more localized range, reflecting the canine groups in the figure above, but do not seem more or less like male or female skulls.
+
+# Conclusion
+
+Skull shape appears to cluster by animal group for cuons, jackals, Indian wolves, and Thai dogs, but there is strong overlap between modern Thai dogs and prehistoric Thai dogs. This suggests that prehistoric dogs are more like modern Thai dogs than the other groups in skull shape. There appears to be no evidence that prehistoric dogs are more like male or female skulls across groups or within groups.
+
+A null hypothesis significance test will be needed to assess whether these groups are truly different from one another.
+
+# Reflection
+
+I still need to beautify my plots and polish up my interpretations, but the process of making and understanding the PCA felt pretty straightforward. I did not have time to run through the NHST with sufficient explanation along the way, though I plan to include that for the final version. Ordination itself makes a lot of sense to me now.
+
+**Final:**
+I did not get around to testing the differences between groups, though I saw in the peer reviews that others found significant differences between animal groups and sexes. I would be interested to follow this up with a pairwise test or Tukey HSD on PC1 for sex as a factor - because prehistoric dogs are all classified as a third unknown sex, I wonder if the significant result is from an actual difference between male and female skulls or just the difference between prehistoric dogs and the other four groups.
+
+Honestly, I was also a bit disappointed to see no one peer reviewed my assignment... I had been looking forward to some varied feedback, both on my interpretations but also my assignment structure and appearance.
+
+

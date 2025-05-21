@@ -1,0 +1,197 @@
+---
+title: "Regression GLS"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning = FALSE, message = FALSE}
+library(automap)
+library(gstat)
+library(nlme)
+library(spdep)
+library(ncf)
+library(tidyverse)
+library(spatialreg)
+```
+
+# Data
+```{r}
+birds <- read.csv("data/birdDiv.csv")
+head(birds)
+
+birds_sf <- st_as_sf(birds, coords = c("UTME", "UTMN"), crs = 32610)
+birds_sf
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = birds_sf, aes(col = birdDiv, size = birdDiv, alpha = 0.95)) +
+  scale_color_continuous(type = "viridis") +
+  guides(size = "none", alpha = "none")
+
+ggplot() +
+  geom_sf(data = birds_sf, aes(col = plantDiv, size = plantDiv, alpha = 0.95)) +
+  scale_color_continuous(type = "viridis") +
+  guides(size = "none", alpha = "none")
+```
+
+# Analysis
+## Naive Model
+
+```{r}
+# fit model assuming no autocorrelation in residuals with gls()
+glsNaive <- gls(birdDiv ~ plantDiv, birds)
+summary(glsNaive)
+```
+
+The initial model of bird diversity as a function of plant diversity gives a positive slope that is significantly different from zero (slope = 1.136, t = 5.445, p < 0.001) and has an error of 0.2087. However, if there is autocorrelation in the residuals, the OLS linear model may not be efficiently predicting values (and overestimating the t-value for plantDiv).
+
+## Visualize Residuals
+
+```{r}
+# add model residuals to dataframe
+birds$glsNaiveResids <- residuals(glsNaive, type = "normalized")
+birds_sf <- st_as_sf(birds, coords = c("UTME", "UTMN"), crs = 32610)
+birds_sf
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = birds_sf, aes(col = glsNaiveResids, size = glsNaiveResids,
+                               alpha = 0.95)) +
+  scale_color_continuous(type = "viridis") +
+  guides(size = "none", alpha = "none")
+```
+
+Residuals from the model look very strongly autocorrelated, with low error values clumped to the southwest and higher error clumped in the northeast.
+
+### Correlogram
+```{r}
+# test for spatial autocorrelation using a correlogram
+residsI <- spline.correlog(x = birds$UTME, y = birds$UTMN,
+                           z = birds$glsNaiveResids, 
+                           resamp = 50, quiet = TRUE)
+# save coordinate points as matrix for dist()
+points <- cbind(birds$UTME, birds$UTMN)
+
+# plot Moran's I for residuals
+plot(residsI, xlim = c(0, max(dist(points))/3))
+```
+
+The correlogram of Moran's I shows that there is strong autocorrelation in the residuals at distances below ~ 5000m. To account for this, I will use a variogram model of the residuals to better inform the bird diversity model.
+
+## Variogram Fitting
+
+```{r}
+# using autofitVariogram() to produce experimental and fitted variogram
+## tests Gaussian, Spherical, and Exponential fits and produces the best
+birds_fit <- autofitVariogram(glsNaiveResids~1, input_data = birds_sf, 
+                      model = c("Gau", "Sph", "Exp"))
+plot(birds_fit)
+
+```
+
+The best-fit variogram model uses a Gaussian framework (nugget = 0.05, sill = 0.83, range = 2398). This will be used as a correlation structure to find the variance-covariance matrix for the updated model.
+
+### Cross Validation
+```{r}
+# observational variogram
+birds_var <- variogram(glsNaiveResids~1, birds_sf)
+# Variogram model
+birds_naivemod <- vgm(psill = 0.83, model = "Gau", range = 2398, nugget = 0.05)
+# fit variogram model
+birds_fit <- fit.variogram(object = birds_var, model = birds_naivemod)
+
+# k-fold cross validation
+## I believe the krige.cv() function should be appropriate here
+set.seed(42)
+n <- 10
+birds_kfold_sf <- krige.cv(formula = glsNaiveResids ~ 1,
+                               locations = birds_sf,
+                               model = birds_fit,
+                               nfold = n,
+                               verbose = FALSE)
+birds_kfold_sf
+```
+
+```{r}
+birds_kfold <- data.frame(birds_kfold_sf$observed, birds_kfold_sf$var1.pred, birds_kfold_sf$fold)
+colnames(birds_kfold) <- c("observed", "var1.pred", "fold")
+head(birds_kfold)
+
+rsq <- 1:n
+rmse <- 1:n
+fold <- 1:n
+
+mod_fit <- data.frame(rsq, rmse, fold)
+
+for (i in 1:n) {
+  birds_kfold_sub <- subset(birds_kfold, fold == i)
+  
+  mod_fit$rsq[i] <- cor(birds_kfold_sub$observed, birds_kfold_sub$var1.pred)^2
+  
+  mod_fit$rmse[i] <- sqrt(mean((birds_kfold_sub$observed - birds_kfold_sub$var1.pred)^2))
+}
+mod_fit
+
+mean(mod_fit$rsq)
+mean(mod_fit$rmse)
+```
+
+The variogram model is not a very good fit of the residuals ($R^2$ = 0.336, RMSE = 0.919).
+
+## Updated Model
+```{r}
+csSpatial <- corSpatial(form=~UTME+UTMN, nugget = TRUE, type = "gaussian")
+glsUpdated <- update(glsNaive, correlation = csSpatial)
+summary(glsUpdated)
+```
+
+The updated regression model shows a different result to the naive model: a non-significant slope in plant diversity predicting bird diversity.
+
+```{r}
+# add the residuals to the spatial dat object
+birds$glsResids <- residuals(glsUpdated,type="normalized")
+birds_sf <- st_as_sf(birds, coords = c("UTME", "UTMN"), crs = 32610)
+
+# Map the residuals from gls
+ggplot() +
+  geom_sf(data = birds_sf, aes(col = glsResids, size = glsResids,
+                               alpha = 0.95)) +
+  scale_color_continuous(type = "viridis") +
+  guides(size = "none", alpha = "none")
+```
+
+The residuals of the updated model look significantly less autocorrelated than the naive model's. 
+
+```{r}
+# test for spatial autocorrelation using a correlogram
+residsI <- spline.correlog(x = birds$UTME, y = birds$UTMN,
+                           z = birds$glsResids, 
+                           resamp = 50, quiet = TRUE)
+# save coordinate points as matrix for dist()
+points <- cbind(birds$UTME, birds$UTMN)
+
+# plot Moran's I for residuals
+plot(residsI, xlim = c(0, max(dist(points))/3))
+```
+
+Moran's I of the residuals shows that there is no significant spatial autocorrelation among them.
+
+# Interpretation.
+Not accounting for spatial autocorrelation, plant diversity appears to be a moderate predictor of bird diversity. However, when we adjust for autocorrelation, the slope is no longer significant. Other factors contributing to the spatial autocorrelation between plant and bird diversity - possibly climate/weather, terrain/topography, or other environmental variables not included in the data - are likely responsible for this, as bird diversity alone is not a significant predictor of plant diversity. 
+
+
+
+

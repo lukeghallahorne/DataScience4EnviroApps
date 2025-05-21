@@ -1,0 +1,149 @@
+---
+title: "A2 Permutation"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    #fig_width: 8
+    #fig_height: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r message = FALSE, error = FALSE}
+# Library
+## tidyverse for data tidying/management
+library(tidyverse)
+```
+
+# The Case of the Crooked Die
+
+If we roll a 6-sided die 60 times, we would expect to roll each number 1-6 approximately 10 times (with a probability of 1/6 per number). Given randomness, we wouldn't necessarily expect to always roll exactly 10 of each, but we can use permutations to test whether the results we obtain are stochastic or weighted towards a particular number.
+
+Below are the results from a single 60-roll test of a 6-sided die (or rather, the emulated results from such a test). I want to test if these results are reasonable for an unbalanced die or if there is evidence of bias towards one or more numbers.
+
+```{r}
+rollSummary <- tibble(value=1:6,
+                      n = c(8, 9, 18, 7, 8, 10))
+rollSummary
+```
+
+## Test Statistic - Chi-Squared
+
+To determine if these rolls are the result of randomness, I will assign a Chi-Square test statistic to the original roll and each permutation.
+
+```{r}
+# number of total die rolls per test
+nRolls <- 60
+
+# expected values for each number on the die
+Expected <- rep(10, 6)
+# observed values
+Observed <- rollSummary$n
+
+# chi squared test statistic
+obsXsq <- sum((Observed - Expected)^2 / Expected)
+obsXsq
+```
+
+The original data have a Chi-squared of 8.2. 
+
+## Permutation
+From here, I will use a permutation test to build a distribution of expected Chi-squared values for multiple 60-roll tests. This repeats the 60 random rolls `m = 1000` times and calculates the Chi-squared test statistic for each test, then creates a distribution of likely Chi-squared values. We can then compare our original test statistic (8.2) to that distribution to determine how likely our original value is. 
+
+```{r}
+# set seed for replicability
+## pulls the same pseudo-random number string each time this code is run
+set.seed(2336)
+# number of times to repeat test
+m <- 1000
+possibleVals <- 1:6
+# create empty vector to store permutation test statistics
+chiSqVec <- vector()
+
+# start permutation loop
+for(i in 1:m) {
+  # randomly sample values from 1-6, 60 times
+  loopRolls <- tibble(value = sample(x = possibleVals, replace = TRUE,
+                                     size = nRolls))
+  # count interations of each value
+  loopSumm <- loopRolls |>
+    count(value)
+  
+  # pull observed counts for each value
+  loopObs <- loopSumm$n
+  
+  # calculate chi-squared test statistic
+  loopXsq <- sum((loopObs - Expected)^2 / Expected)
+  
+  # save loop chi-squared value to i'th index of empty vector
+  chiSqVec[i] <- loopXsq
+}
+```
+
+This loop repeats `m = 1000` times, with each iteration sampling 60 random dice rolls. For each, a chi-squared test statistic is calculated, then stored into a separate object for analysis. 
+
+## Distribution
+
+Now we have our permutated Chi-squared values, we can make a distribution and assess where our original observed value lies in that distribution. That is, we use the simulated test statistics to model the distribution of Chi-squared under the null hypothesis that each value on the die has an equal chance of occurring. Furthermore, we can calculate an approximate p-value (the probability that we would get a more extreme test statistic) using the proportion of permutated values.
+
+
+```{r}
+# calculate p-value by counting all instances of chi squared greater than the observed, divided by the total number of tests
+pval <- sum(chiSqVec > obsXsq) / m
+pval
+```
+
+
+```{r}
+
+# convert permutated chi-squared values into dataframe
+perm_df <- tibble(chiSq = chiSqVec, sign = NA)
+
+# create plot for density across all values
+p1 <- ggplot(data = perm_df) +
+  # density function
+  geom_density(aes(x = chiSq)) 
+
+# pull densities from ggplot object
+## this is so I can color each half (below and above the observed value) separately
+perm_dens <- ggplot_build(p1)$data[[1]]
+
+p2 <- p1 +
+  # color area above observed value
+  geom_area(data = filter(perm_dens, x >= obsXsq), 
+            aes(x = x, y = y), fill = "red", alpha = 0.25) +
+  geom_area(data = filter(perm_dens, x <= obsXsq), 
+            aes(x = x, y = y), fill = "blue", alpha = 0.25) +
+  # original Observed value
+  geom_point(data = tibble(chiSq = obsXsq), 
+             aes(x = chiSq, y = 0), color = "darkblue", size = 4, shape = 8) +
+  geom_vline(aes(xintercept = obsXsq), linetype = 3, color = "darkblue") +
+  # change labels and aesthetics for visualization
+  xlab(expression(paste(chi^2))) +
+  ylab("Density") 
+p2
+```
+
+Figure 1: Density distribution from a permutation test (m = 1000) of Chi-squared values for 60 rolls of a 6-sided die. Black line shows the proportional density at a given Chi-squared value. Dotted line and asterisk depict the originally observed Chi-squared. Blue shading indicates a Chi-squared lower than the observed; red shading indicates a Chi-squared greater than the observed. 
+
+Our permutation gives us a p-value of 0.14, decently above a rough alpha of 0.1 or 0.05. That is, 14% of the time, we would expect a random Chi-square from this test to be higher than our observed.
+
+Hence, we can say that our original 6-sided die has approximately a 86% of being fair, and a 14% chance of being unbalanced. 
+
+
+
+
+
+
+
+

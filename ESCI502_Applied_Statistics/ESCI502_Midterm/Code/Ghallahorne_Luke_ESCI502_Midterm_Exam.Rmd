@@ -1,0 +1,480 @@
+---
+title: "Midterm Exam"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/Midterm_Exam/Data')
+```
+
+```{r library, include = FALSE}
+library(tidyverse)
+library(GGally)
+library(PNWColors)
+library(multcompView)
+
+```
+
+## Midterm Exam.
+
+### Part 1: Concepts.
+
+#### 1. Define (15 points):
+Define each term and explain why the concept is important:
+
+##### a. p-value: 
+A p-value represents the probability that observed data occur by chance in an expected probability distribution. A low p-value indicates that the observed patterns are unlikely to have occurred randomly. By comparing a calculated p-value for data, we can compare it to a previously-determined alpha value and have justification for either rejecting or failing to reject the null hypothesis. A p-value allows us some confidence in whether patterns we are seeing in data are significant or due to random chance.
+
+##### b. Gaussian distribution:
+A Gaussian (or normal) distribution is a continuous probability distribution centered around the mean and with spread determined by standard deviation. About two thirds of the distribution is within one standard deviation from the mean; two standard deviations encompasses 95% of the distribution. A lot of data follow a Gaussian distribution, especially if averaged values are considered (law of large numbers).
+
+##### c. Collinearity:
+Two variables are collinear if they have a correlating effect on one another (i.e., if one increases, the other responds in some way). This is very important in regards to a linear model, which assumes that predictor variables are independent from one another. In creating a model, treating two collinear variables as independent can exacerbate or misrepresent the influence of either variable, creating inflated predictions.
+
+##### d. Define the terms in the following linear additive model equation below:
+
+$$Y_{ij} = \mu + \tau_i + \rho_j + \epsilon_{ij}$$
+$Y_{ij}$ : the response for the ith treatment in the jth group.
+
+$\mu$ : the overall or population mean.
+
+$\tau_i$ : treatment effects for the ith treatment.
+
+$\rho_j$ : interaction/correlation effects for the jth group.
+
+$\epsilon_{ij}$ : unexplained error for the ith and jth datapoint.
+
+##### e. How does the above equation differ from the linear model equation below:
+
+$$Y \sim X \beta_0 + X \beta_1 + \epsilon$$
+
+The linear model equation includes each successive variable (or treatment) as an individual term, $\beta_i$, affecting the response $Y$. It assumes no collinearity, whereas the linear additive model incorporates an interaction term.
+
+##### f. What is the relevance of the following equation:
+
+$$\epsilon \sim N(0,\sigma^2) $$
+
+An assumption of general linear models is that the residual errors are normally distributed with a spread equal to the standard deviation. This is important for linear models in that any unexplained error should be random and not trending in one direction due to a predictor variable.
+
+<br>
+
+#### 2. Discuss (4 points):
+Explain the difference between regression and ANOVA and why replicated regression may be an optimal experimental design.
+
+ANOVA compares the means of a continuous variable between sets of a categorical variable. It cannot determine if the different groups are the cause of a difference in means, only whether or not one exists. A linear regression compares two continuous variables and minimizes the squared residuals to predict expected results. If a categorical variable can be made into a numeric progression (such as low-med-high to 1-2-3), regression can perform the same function as ANOVA while providing more power to correctly address the null hypothesis. As you increase the number of treatments, power with an ANOVA decreases significantly more than with a regression, allowing greater opportunity in experimental design while allowing for more accurate analysis.
+
+<br>
+
+#### 3. Describe (15 points):
+Describe the following (answers should be several sentences):
+
+##### a. Making a statistical inference.
+Making a statistical inference describes the process of looking at the output of your test to asserting some conclusion about your study system. By comparing a computed test statistic to the appropriate probability distribution, you can assess whether your data are likely in a random circumstance or indicate a pattern. If the distribution of your data do not sufficiently overlap with the random distribution (i.e., the associated p-value of your test statistic is lower than your pre-determined alpha), you can reject the null hypothesis of no connection between variables. Then, you can apply your alternative hypothesis to the original context and infer the reasoning behind any patterns your data are showing.
+
+##### b. Creating orderly "tidy" data.
+The primary goal of tidying data is to make it easier to work with. After ensuring metadata and all other vital components are present (and saving a backup raw file), I go through any dates and separate year, month, day, etc., into separate columns. Then I sort through and make sure any blank cells are uniformly labeled as "NA" while preserving any measured zero values. I make sure all column names are import-compatible, simple and concise without spaces or odd characters, and I round values to significant digits by column. Any treatments that are organized as variables I rearrange, though this can be easier in R after importing the csv. I lastly scan the entire dataset thoroughly to check for any remaining inconsistencies or errors.
+
+##### c. Model selection for linear models.
+After determining if the variables pass the assumptions of normality and homoskedasticity, I check for collinearity in variables to see if an interaction term is needed between any of them. I then fit a first model including all of the suspected predictor variables and assess the $R^2$ and analysis of variance of the model. If a predictor variable does not contribute significantly to the model, I create a new one that excludes that variable. I continue this process until only one or a few variables remain, all with a significant impact on the model. I then run an Akaike information criterion analysis on the various models I have made, and look for the lowest AIC and highest $R^2$ (indicating the best-fit model, as AIC is a measure of badness-of-fit). At the end, I plot the residuals to ensure they follow the assumptions of a linear model (normality).
+
+##### d. Sums of squares as a measure of error.
+Sums of squares are an effective way to measure error because squaring incorporates spread above and below the mean, and gives extra weight to points further away than those close by. To calculate the mean square error, you subtract the sum of squares from the regression line from the total sum of squares from the grand mean of y values. This gives you the error that is not explained by the model parameters. You can reduce this error by adding parameters, but at the cost of predictive power.
+
+<br>
+
+#### 4. Why is understanding variance important in statistical tests? (4 points):
+Variance is a critical part of assessing data, since it describes the spread of datapoints away from the mean, which by itself can be misleading. When comparing collected data to other variables or a probability distribution of a model, it is important to understand if the variances are similar or have fundamentally different behavior. Many typical tests in data analysis (i.e., ANOVA and general linear models) assume that variance is approximately equal among test variables. If this is not the case, transformations or other tests are needed to accurately make conclusions based on the data. It is vital that people working with data know how to recognize patterns in variance and how that changes their approach to analysis.
+
+<br>
+
+#### 5. Why do we care if a regression slope is different from 0 and what statistic do we use to assess this? (2 points):
+If a regression slope is not different from zero, then there is no evidence that the predictor variable(s) are influencing the response variable. There needs to be some correspondence between changes in one variable and a response in another for us to reject the null hypothesis that the variables are independent. Whether a slope is significantly different from 0 is computed with a t-test, producing a t statistic for the predictor variable(s).
+
+<br>
+
+### Part 2: Problems.
+
+#### Problem A (15 points):
+
+"You are interested in determining the effect of pesticides on fungal infection (zoospores/mL) in white-spotted, three-toed frogs (WTF). It is thought that sex of WTF may play a role in fungal infection severity. Random samples of 15 male and 15 female frogs were obtained. For each treatment, 5 frogs were randomly assigned to receive the pesticide treatment of varying levels (low, medium, high). Here we have a randomized controlled block design with fixed blocks (sexes, r = 2) and within each block, the experimental units (frogs) were randomized to receive the treatments (pesticides: l, m, h, t = 3, fixed effect) with n = 5 frogs for each treatment/block combination. A single count of zoospores/mL was recorded for each frog. Lastly, it was suspected that the difference in fungal spores might be different depending on whether a frog was male or female, so a treatment/sex interaction may be present.
+
+Analyze the data contained in the file frog_fungus.csv to determine if fungal infection rates were influenced by pesticide treatment and/or by sex or the interaction among the two. Please only include plots that support your inference (i.e., I don’t want to see all the plots/analyses under the sun–just the ones that are relevant to your objectives for each step)."
+
+##### 1. State the H~0~.
+
+H~0~: $\mu_l = \mu_m = \mu_h = \mu_M = \mu_F$
+
+Fungual infection in white-spotted, three-toed frogs is the same between treatments and between male and female frogs.
+
+
+##### 2. Assess the assumptions associated with your analysis.
+
+```{r frog_data_exploration, include = FALSE}
+frog <- read.csv("frog_fungus.csv")
+head(frog)
+
+frog$Sex <- as.factor(frog$Sex)
+frog$PesticideTreatment <- as.factor(frog$PesticideTreatment)
+head(frog)
+
+frog$PesticideTreatment <- factor(frog$PesticideTreatment, levels = c("Low", "Med", "High"))
+head(frog)
+```
+
+
+```{r frog_assumptions_treatment, echo = FALSE, fig.asp=0.4}
+frog |>
+  ggplot(aes(FungalColonies)) +
+  geom_histogram(binwidth = 5, col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~PesticideTreatment) +
+  theme_minimal() +
+  xlab("Fungal Colonies (zoospores/mL) by Pesticide Treatment") +
+  ylab("Count") +
+  ggtitle("Frog Fungal Infections by Treatment") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+frog |>
+  ggplot(aes(FungalColonies)) +
+  geom_boxplot(col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~PesticideTreatment) +
+  theme_minimal() +
+  xlab("Fungal Colonies (zoospores/mL)") +
+  ylab("Pesticide Treatment") +
+  ggtitle("Frog Fungal Infections by Treatment") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  coord_flip()
+```
+Each treatment is roughly normally distributed and has sufficiently equal variance to the others to satisfy the assumptions of the ANOVA.
+
+
+```{r frog_normality_sex, echo = FALSE, fig.asp=0.4}
+frog |>
+  ggplot(aes(FungalColonies)) +
+  geom_histogram(binwidth = 5, col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~Sex) +
+  theme_minimal() +
+  xlab("Fungal Colonies (zoospores/mL) by Sex") +
+  ylab("Count") +
+  ggtitle("Frog Fungal Infections by Sex") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+frog |>
+  ggplot(aes(FungalColonies)) +
+  geom_boxplot(col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~Sex) +
+  theme_minimal() +
+  xlab("Fungal Colonies (zoospores/mL)") +
+  ylab("Sex") +
+  ggtitle("Frog Fungal Infections by Sex") +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  coord_flip()
+
+```
+Both sexes are approximately normal. Although it looks like there is a little bimodality to the data, it is more important in an ANOVA that the variances be equivalent than for the data to be perfectly normal. The boxplots show those variances to be equal, so we can continue with the analysis.
+
+
+##### 3. Conduct the analysis (using the raw data!), check your model, and provide the important output related to your H0.
+
+Model formula:
+
+$$Fungal Colonies \sim Pesticide Treatment * Sex$$
+```{r frog_anova, echo = FALSE}
+frog.aov <- aov(FungalColonies ~ PesticideTreatment * Sex, data = frog)
+summary(frog.aov)
+```
+Pesticide Treatment: $F_{(2,24)} = 35.816$, $p < 0.001$
+Sex: $F_({1,24}) = 0.899$, $p < 0.352$
+Pesticide Treatment + Sex Interaction: $F_{(2,24)} = 1.399$, $p < 0.266$
+
+Sex did not change mean fungal colonies significantly, nor was there a significant interaction between sex and pesticide treatment. However, pesticide treatments did significantly differ in their means, providing evidence to reject the null hypothesis.
+
+##### 4. What do you conclude? Include all supporting statistical evidence and plot(s), and tie your conclusion to the question.
+
+```{r frog_tukey, include = FALSE}
+frog.tukey <- TukeyHSD(frog.aov)
+frog.tukey
+
+tapply(frog$FungalColonies, frog$PesticideTreatment, mean)
+
+```
+
+```{r frog_tukeylabels, include=FALSE}
+
+# compact letter display for Tukey test - found on https://rpubs.com/RosaneRech/OneFactorBoxplot
+
+cld <- multcompLetters4(frog.aov, frog.tukey)
+print(cld)
+
+# table with factors and 3rd quantile for adding labels to plot
+Tk <- group_by(frog, PesticideTreatment) |>
+  summarise(mean=mean(FungalColonies), quant = quantile(FungalColonies, probs = 0.75)) |>
+  arrange(desc(mean))
+
+# extracting the compact letter display and adding to the Tk table
+cld <- as.data.frame.list(cld$PesticideTreatment)
+Tk$cld <- cld$Letters
+Tk$PesticideTreatment <- as.factor(Tk$PesticideTreatment)
+print(Tk)
+```
+
+```{r frog_tukeyplot, echo = FALSE}
+frog |>
+  ggplot(aes(FungalColonies)) +
+  geom_boxplot(aes(fill = PesticideTreatment), show.legend = TRUE) +
+  ggtitle("Frog Fungal Infections by Treatment") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text.x=element_blank()) +
+  geom_text(data = Tk, aes(x=quant, y = c(0.2,0,-0.2), label = cld),
+            size = 4, hjust = -1, vjust = -1) +
+  scale_fill_manual(values = c("coral1", "orchid3", "turquoise3")) +
+  labs(x = "Fungal Colonies (zoospores/mL)", y = "Pesticide Treatment") +
+  coord_flip()
+```
+
+Number of fungal colonies on white-spotted, three-toed frogs was significantly different between pesticide levels ($F_{(2,24)} = 35.816$, $p < 0.001$), regardless of sex ($F_({1,24}) = 0.899$, $p < 0.352$). Furthermore, there was no significant interaction between sex and treatment level on fungal colonies ($F_{(2,24)} = 1.399$, $p < 0.266$).
+
+Following a Tukey HSD test, mean fungal colonies (zoospores/mL) was lower in the low pesticide treatment ($\overline x_{low} = 13.50$ zoospores/mL) than in the medium treatment ($\overline x_{med} = 23.29$ zoospores/mL, $p < 0.002$) and than in the high
+treatment ($\overline x_{high} = 34.26$ zoospores/mL, $p < 0.001$). Mean fungal colonies were also lower in the medium treatment than in the highest treatment ($p < 0.001$).
+
+This provides strong evidence to reject the null hypothesis that pesticide treatment has no effect on fungal infection in white-spotted, three-toed frogs, and fungal infection decreases with . However, it does not support rejecting the null hypothesis that sex influences fungal infections. As pesticide exposure increases, so do fungal infections in three-toed frogs. Sex of the frog does not influence their infection counts, regardless of pesticide treatment.
+
+<br>
+
+#### Problem B (25 points).
+
+You have been asked to see if geoducks (Panopea generosa) at the shellfish farm grow better (mm/yr) in years of high primary production (measured here by chlorophyll a, chl in g/m3).
+
+##### 1. Fit a simple linear model of geoduck growth as a function of chlorophyll using geoducks3.csv. Assess assumptions and show supporting information (e.g., statistics, plot(s)) to make inference about chlorophyll as a predictor of geoduck growth.
+
+```{r geoduck_exploration, include = FALSE}
+geoduck <- read.csv("geoducks3_tidy0.csv")
+# I went back after using the raw data and used the tidy datasheet, as I was receiving errors while trying to put my model line on the scatter plot for the first model, and went ahead and tidied it completely.
+## When I did that, my model changed its results, saying chlorophyll was no longer a significant predictor of geoduck growth. I returned to the original dataset, and tidied only the dates in which no chl measurement was recorded, and reran my analysis. This returned my results to the original, although it makes me a bit skeptical of the outcome, since only three data points affected the result.
+
+geoduck
+summary(geoduck)
+```
+```{r geoduck_plot1, echo = FALSE}
+geoduck |>
+  ggplot(aes(chl, geo.growth)) +
+  geom_point() +
+  labs(x = "Chlorophyll (g/m3)", y = "Geoduck Growth (mm/yr)") +
+  ggtitle("Geoduck Growth by Chlorophyll Concentration") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+There appears to be a slight positive correlation between chlorophyll and geoduck growth.
+
+```{r geoduck_assumptions, echo = FALSE, fig.asp=0.9}
+par(mfrow=c(2,2))
+hist(geoduck$chl, main = "Chl")
+hist(geoduck$geo.growth, main = "Growth")
+boxplot(geoduck$chl)
+boxplot(geoduck$geo.growth)
+```
+
+Both chlorophyll and geoduck growth are roughly normal and have sufficiently equal variance for a linear model.
+
+```{r geoduck_lm}
+geoduck.lm <- lm(geo.growth ~ chl, data = geoduck)
+summary(geoduck.lm)
+anova(geoduck.lm)
+```
+
+Intercept: $-0.9373$
+Slope: $0.6020, t = 2.251, p < 0.028$.
+
+Model Fit:
+$R^2 = 0.0589$
+$F_{(1,64)} = 5.069, p < 0.028$.
+
+```{r geoduck_confint, include = FALSE}
+confint(geoduck.lm)
+CIs <- predict(geoduck.lm, se.fit=T, interval = "confidence")
+CIs
+```
+
+
+```{r geoduck_plot2, echo = FALSE}
+geoduck |>
+  ggplot(aes(chl, geo.growth)) +
+  geom_point(color = "orchid4") +
+  labs(x = "Chlorophyll (g/m3)", y = "Geoduck Growth (mm/yr)") +
+  ggtitle("Geoduck Growth by Chlorophyll Concentration") +
+  geom_ribbon(aes(ymin = CIs$fit[,2], ymax = CIs$fit[,3]), fill = "lightcoral", alpha = 0.5) +
+  geom_path(aes(chl, CIs$fit[,1]), linejoin = "round", color = "coral4") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+The linear model does provide evidence for an effect of chlorophyll concentration on geoduck growth. The slope of the model (0.602) is significantly different from 0 ($t = 2.251, p < 0.028$). However, the model explains a very small proportion of the variance in geoduck growth $(R^2 = 0.0589)$, although the model does fit the data ($F_{(1,64)} = 5.069, p < 0.028$). This is reflected in the confidence intervals of the model, which encompass very few actual data points.
+
+It seems likely that primary production (represented by chlorophyll concentration) is only a contributor to geoduck growth, and other factors may explain the residual variance.
+
+<br>
+<br>
+
+
+It turns out, phytoplankton are finnicky beasts and need nutrients and light and ocean conditions that are conducive to their own growth. So, you think measuring Chl might be confounded by current velocity (cm/s) and temperature (°C) near the site. Build a model to predict geoduck growth from a suite of environmental variables that include current velocity, temperature, and chl a.
+
+Note: If there are missing values in one of your predictors, your models will not be comparable (different input data). Thus, you will need to remove that observation(s) from the data set. Another solution is to interpolate, but here, please remove observations with missing values. You will end up with a 63x4 data frame if you do this correctly (removing measurements associated with Years 1920, 1921, 1940, 1941, 1967) using the variables above with no NAs.
+
+##### 2. Explore the data so you know what you have. Tidy the data (see above). Produce descriptive statistics of the response variable and candidate predictors and present these. Assess collinearity and assumptions.
+
+```{r geoduck2_exploration, include = FALSE}
+geoduck2 <-read.csv("geoducks3_tidy.csv")
+geoduck2
+```
+```{r geoduck2_summarystats}
+dim(geoduck2)
+summary(geoduck2)
+str(geoduck2)
+```
+$\overline x_{growth} = 0.160$
+
+$\overline x_{temp} = 12.11$
+
+$\overline x_{chl} = 1.823$
+
+$\overline x_{current} = 1.9586$
+
+
+```{r geoduck2_collinearity1, include = FALSE, fig.asp=0.4}
+## I forgot about GGpairs until the end, so I kept in my original code here
+par(mfrow=c(1,3))
+plot(geoduck2$temp, geoduck2$chl, pch=16)
+plot(geoduck2$current, geoduck2$chl, pch=16)
+plot(geoduck2$current, geoduck2$temp, pch=16)
+
+```
+
+While temperature does not appear to be correlated with chlorophyll, current does have a positive trend visible. Current and temperature may have a positive correlation, but it also appears funneled.
+
+```{r geoduck2_cortest, include = FALSE}
+cor.test(geoduck2$temp, geoduck2$chl)
+cor.test(geoduck2$temp, geoduck2$current)
+cor.test(geoduck2$current, geoduck2$chl)
+```
+
+
+```{r geoduck_assumptions1, echo = FALSE, fig.asp=0.9}
+ggpairs(geoduck2)
+par(mfrow=c(2,2))
+boxplot(geoduck2$geo.growth, xlab = "Geoduck Growth (mm/yr)")
+boxplot(geoduck2$temp, xlab = "Temperature (deg C)")
+boxplot(geoduck2$chl, xlab = "Chlorophyll (g/m3)")
+boxplot(geoduck2$current, xlab = "Current (cm/s)")
+```
+
+Each variables is approximately normal and has roughly equal variance to the others.
+
+Temperature and chlorophyll are not correlated $(r = 0.113, t = 0.887, p < 0.379)$, while temperature and current have a small ($r = 0.388$) but significant correlation $(t = 3.287, p < 0.002)$. Current and chlorophyll have the greatest correlation $(r = 0.569, t = 5.404, p < 0.001)$. Since temperature is only partly correlated with current and not at all with chlorophyll, I will include an interaction term only for current and chlorophyll.
+
+##### 3. Fit models explaining geoduck growth (use only the main effects specified in the problem statement above).
+
+```{r geoduck2_lm}
+geoduck2.lm <- lm(geo.growth ~ chl * current + temp, data = geoduck2)
+summary(geoduck2.lm)
+anova(geoduck2.lm)
+```
+
+Intercept: $-0.429$
+
+Slope: Temperature is the only slope significantly different from 0 $(0.034, t = 9.851, p < 0.001)$. 
+
+Chlorophyll + Current Interaction: The interaction between chl and current is not significant $(t = 1.261, p < 0.212)$.
+
+Model Fit:
+$R^2 = 0.718$
+$F_{(4,58)} = 40.47, p < 0.001$
+
+Significance to fit:
+Chlorophyll: $F_{(1,58)} = 10.82, p < 0.002$
+Current: $F_{(1,58)} = 40.66, p < 0.001$
+Temperature: $F_{(1,58)} = 108.8202, p < 0.001$
+
+
+```{r geoduck2_modelfit1, echo = FALSE, fig.asp = 0.9}
+par(mfrow=c(2,2))
+plot(geoduck2.lm)
+```
+
+The model is a good fit for the data $(F_{(4,58)} = 40.47, p < 0.001)$ and explains much of the variation $(R^2 = 0.718)$.
+
+##### 4. Use model selection to arrive at the best model. Explain why you selected this model.
+
+Only temperature had a slope significantly different from 0 in the model $(0.034, t = 9.851, p < 0.001)$. However, chlorophyll and current both contributed significantly to the model($F_{(1,58)} = 10.82, p < 0.002$ and $F_{(1,58)} = 40.66, p < 0.001$, respectively). I created models by first removing the interaction (which did not contribute), then by progressively removing variables until only temperature remained as a predictor, then compared $R^2$ values and ran an AIC to determine "badness of fit" for each model.
+
+```{r geoduck2_lm2}
+geoduck2.lm2 <- lm(geo.growth ~ current + chl + temp, data = geoduck2)
+summary(geoduck2.lm2)
+anova(geoduck2.lm2)
+```
+Chlorophyll did not contribute in this model, so I removed it.
+
+```{r geoduck2_lm3}
+geoduck2.lm3 <- lm(geo.growth ~ current + temp, data = geoduck2)
+summary(geoduck2.lm3)
+anova(geoduck2.lm3)
+```
+Finally, I removed current to have a single variable of temperature.
+
+```{r geoduck2_lm4}
+geoduck2.lm4 <- lm(geo.growth ~ temp, data = geoduck2)
+summary(geoduck2.lm4)
+anova(geoduck2.lm4)
+```
+```{r geoduck2_aic}
+AIC(geoduck2.lm, geoduck2.lm2, geoduck2.lm3, geoduck2.lm4)
+```
+
+
+The model with current and temperature has the highest adjusted $R^2$ (0.7184), suggesting it explains the greatest amount of variation in geoduck growth. The AIC confirms that the third model $(Geo.Growth \sim Temperature + Current)$ is the best fit for the data $(F_{(2,60)} = 80.1, p < 0.001)$.
+
+##### 5. Assess the fit of your model and use diagnostics to validate your model.
+
+```{r geoduck2_modelfit, fig.asp=0.9}
+par(mfrow=c(2,2))
+plot(geoduck2.lm3)
+```
+
+The plotted residuals from the model show a relatively even spread, and the qqplot indicates they are mostly normal, though wiht some tailedness on either end. The model overall fits the data quite well $(F_{(2,60)} = 80.1, p < 0.001)$ and explains the majority of the variance $(R^2 = 0.718)$. Furthermore, both predictor variables contribute significantly to the model fit (current: $F_{(1,60)} = 50.70, p < 0.001$, temperature: $F_{(1.60)} = 109.50, p < 0.001$).
+
+
+##### 6. Provide a concluding statement in words with all supporting statistical evidence.
+
+When considered alone, chlorophyll concentration is a poor but nonetheless significant predictor of geoduck growth $(R^2 = 0.0589, F_{(1,64)} = 4.069, p < 0.028)$. Since temperature and current affect chlorophyll concentration, those metrics themselves are better predictors of geoduck growth when combined in an additive linear model $(R^2 = 0.718, F_{(2,60)} = 80.1, p < 0.001)$. As temperature and current velocities increase, there is a subsequent increase in geoduck growth rates.
+
+<br>
+
+### Part 3: Extras
+
+##### How fair do you think this exam was (1-5, 5 being fair)?
+5. The descriptive questions were well covered in class and were reasonable to expect understanding of. The R questions weren't difficult to follow and didn't contain any surprises.
+
+##### How prepared did you feel to complete this exam?
+Fairly well, though less so for definitions and describing concepts, though I see the merit of it. It made me yet again reassess how complete my understanding is and learn though trying to rephrase what I had learned.
+
+##### What do you wish we had covered more completely?
+I would have been interested to delve deeper into the sums of squares and how the calculations are made; error has always been a bit of an esoteric concept in previous stats classes, and I'm still finding ways to solidify them in my head. 
+
+##### How long did it take you to complete this exam?
+About eight or nine hours, across a couple of days.
+
+
+
+
+
+
+
+
+

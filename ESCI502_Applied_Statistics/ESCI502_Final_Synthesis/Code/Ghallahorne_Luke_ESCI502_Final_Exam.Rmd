@@ -1,0 +1,401 @@
+---
+title: "Final Exam"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/Final_Exam/Data')
+```
+
+```{r library, include = FALSE}
+getwd()
+library(tidyverse)
+library(car)
+library(knitr)
+library(PNWColors)
+library(emmeans)
+```
+
+
+
+
+```{r data_input}
+# Inputting Data
+abalone <- read.csv("abalone2.csv")
+head(abalone)
+
+# Subsetting dataframe to include only variables of interest.
+aba <- abalone[,c("Age", "Sex", "Diameter", "Shell.wt", "Shucked.wt")]
+head(aba)
+
+abaF <- subset(aba, Sex == "F")
+abaM <- subset(aba, Sex == "M")
+```
+```{r}
+# color palettes
+names(pnw_palettes)
+pal1 <- pnw_palette("Lake",2)
+pal1
+
+aba$Sex <- as.factor(aba$Sex)
+colors <- pal1[unclass(aba$Sex)]
+
+```
+
+```{r fig.asp = 0.8}
+# Assessing distributions
+par(mfrow=c(2,2))
+
+hist(aba$Age, main = "Age (years)", xlab = "Age (years)", col = pnw_palette("Sunset2")) 
+  # appears somewhat normal, but age is a positive, discrete variable, so Poisson is likely more appropriate.
+
+hist(aba$Diameter, main = "Diameter", xlab = "Diameter", col = pnw_palette("Sunset2")) 
+  # appears normal, with some left skew
+
+hist(aba$Shell.wt, main = "Shell Weight", xlab = "Shell Weight", col = pnw_palette("Sunset2"))
+  # appears normal, with some right skew
+
+hist(aba$Shucked.wt, main = "Shucked weight", xlab = "Shucked Weight", col = pnw_palette("Sunset2"))
+  # appears normal, with some right skew
+```
+
+The three numeric predictors - diameter, shell weight, and shucked weight - are all normally distributed, with some skew to the left or right. Age appears somewhat normal, but age is a positive, discrete variable, so a Poisson distribution may be more appropriate. 
+
+```{r fig.asp = 1}
+stripchart(Age ~ Sex, data = aba, 
+           vertical = TRUE,
+           method = "jitter", 
+           pch = 16, 
+           col = pal1, 
+           cex = 0.5,
+           main = "Abalone Age by Sex",
+           ylab = "Age (years)")
+
+```
+
+Variance in age is similar between male and female abalone.
+
+
+```{r}
+# Comparing variables.
+pairs(aba[,-2], 
+    #  col = aba$Sex,
+      pch = 16, 
+      cex = 0.25, 
+      col = colors,
+      main = "All (F = green, M = blue)")
+
+pairs(abaF[,-2], 
+      col = colors[1],
+      pch = 16, 
+      cex = 0.25, 
+      main = "Female") # only Female abalone
+
+pairs(abaM[,-2],
+      col = colors[2835], 
+      pch = 16, 
+      cex = 0.25,
+      main = "Male") # only Male abalone
+
+```
+All three predictors have some relationship to age (as expected, given the introductory information); it appears funnel shaped, with tighter data at smaller values and greater values as the Xi's increase. Diameter, shell weight, and shucked weight are also interrelated, with exponential/logarithmic funneling patterns.
+
+These patterns do not change when comparing male and female abalone.
+
+```{r}
+# Testing for correlation
+kable(cor(aba[,-c(1,2)]))
+```
+
+The predictors are all strongly correlated to each other, as shown by the r values from Pearson correlation tests in the table above. However, since we are exploring main effects only for the purposes of the exams, I will omit any interactions from my candidate models.
+
+```{r fig.asp = 1}
+# Evaluating univariate patterns with link - log()
+par(mfrow=c(3,3))
+
+plot(Age ~ Diameter, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ Diameter, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ log(Diameter), data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(Age ~ Shell.wt, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ Shell.wt, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ log(Shell.wt), data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(Age ~ Shucked.wt, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ Shucked.wt, data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+
+plot(log(Age) ~ log(Shucked.wt), data = aba, col = colors, pch = 1, cex = 0.5)
+legend("topright", legend = levels(aba$Sex), col = pal1, pch = 1, cex = 0.8, bty = "o")
+```
+
+Relationships between variables and log of age (column 2) are a little less funneled and appear more linear/logarithmic in pattern than the raw data (column 1). Taking the log of both x and y variables (column 3) reveals a more linear pattern between the log of each predictor and the log response. However, this becomes very difficult to interpret, and since the predictors are already normally distributed, there is no need to log-transform them.
+
+```{r}
+# Full Model.
+m1 <- glm(Age ~ Diameter + Shell.wt + Shucked.wt + Sex, data = aba, family = "poisson")
+summary(m1)
+anova(m1)
+```
+
+```{r}
+# Checking for collinearity
+vif(m1)
+kable(vif(m1))
+```
+There is some indication that Diameter is slightly collinear with the other explanatory variables (VIF = 6.12), but with all values lower than 10, we can assume no strong collinearity and continue with the model.
+
+```{r}
+# Checking for overdispersion
+D <- deviance(m1)
+degf <- summary(m1)$df[2]
+phi <- D/degf
+phi
+
+# using Chi^2 test
+pp <- sum(resid(m1, type = "pearson")^2)
+1 - pchisq(pp, m1$df.resid)
+```
+There is no overdispersion in the model ($phi <\approx 1$).
+
+Three variables are contributing significantly to the model: diameter ($z=5.91, p < 0.001$), shell weight ($z = 19.86, p < 0.001$), and shucked weight ($z=-16.81, p < 0.001$). The categorical variable of sex did not affect the model fit ($z = -0.08, p < 0.94$). However, I will include sex in a few model variations as it is a variable of interest (per instructions, gonad type may affect the relationship between age and size, and we were told to include sex in the model options).
+
+
+```{r}
+m1.1 <- glm(Age ~ Diameter + Shell.wt + Shucked.wt, data = aba, family = "poisson")
+summary(m1.1)
+anova(m1.1)
+```
+
+
+```{r}
+# 2-predictor combination models, including Sex
+m2 <- glm(Age ~ Diameter + Shell.wt + Sex, data = aba, family = "poisson")
+m2.1 <- glm(Age ~ Diameter + Shell.wt, data = aba, family = "poisson")
+
+m3 <- glm(Age ~ Diameter + Shucked.wt + Sex, data = aba, family = "poisson")
+m3.1 <- glm(Age ~ Diameter + Shucked.wt, data = aba, family = "poisson")
+
+m4 <- glm(Age ~ Shucked.wt + Shell.wt + Sex, data = aba, family = "poisson")
+m4.1 <- glm(Age ~ Shucked.wt + Shell.wt, data = aba, family = "poisson")
+```
+
+```{r}
+# 1-predictor models, including Sex
+m5 <- glm(Age ~ Diameter + Sex, data = aba, family = "poisson")
+m5.1 <- glm(Age ~ Diameter + Sex, data = aba, family = "poisson")
+
+
+m6 <- glm(Age ~ Shell.wt, data = aba, family = "poisson")
+m6.1 <- glm(Age ~ Shell.wt + Sex, data = aba, family = "poisson")
+
+m7 <- glm(Age ~ Shucked.wt + Sex, data = aba, family = "poisson")
+m7.1 <- glm(Age ~ Shucked.wt, data = aba, family = "poisson")
+
+```
+
+```{r}
+# model comparison with AIC
+aba.aic<-AIC(m1, m1.1, m2, m2.1, m3, m3.1, m4, m4.1, m5, m5.1, m6, m6.1, m7, m7.1)
+formula <- c("Age ~ Diameter + Shell.wt + Shucked.wt + Sex",
+             "Age ~ Diameter + Shell.wt + Shucked.wt",
+             "Age ~ Diameter + Shell.wt + Sex",
+             "Age ~ Diameter + Shell.wt",
+             "Age ~ Diameter + Shucked.wt + Sex",
+             "Age ~ Diameter + Shucked.wt",
+             "Age ~ Shucked.wt + Shell.wt + Sex",
+             "Age ~ Shucked.wt + Shell.wt",
+             "Age ~ Diameter + Sex",
+             "Age ~ Diameter",
+             "Age ~ Shell.wt + Sex",
+             "Age ~ Shell.wt",
+             "Age ~ Shucked.wt + Sex",
+             "Age ~ Shucked.wt")
+aba.aic<- data.frame(aba.aic, formula)
+kable(aba.aic)
+min(aba.aic$AIC)
+```
+
+By AIC comparison, the best fit model includes main effects of diameter, shell weight, and shucked weight, excluding sex. However, its AIC is very slightly lower than the full model (including sex), and there is biological reasoning to include sex despite its low significance. Moreover, with an n of 2835, there are plenty of data to justify including more predictor variables. I ultimately settled on the full model ($Age \sim Diameter + Shell.wt + Shucked.wt + Sex$) as the best model.
+
+To be sure that a Poisson distribution was the best for the model, I compared my GLM to a Gaussian model.
+
+
+```{r}
+# Comparing to Gaussian model
+m1.2 <- glm(Age ~ Diameter + Shell.wt + Shucked.wt + Sex, data = aba, family = "gaussian")
+summary(m1.2)
+anova(m1.2)
+
+```
+
+The Gaussian-fit model has a lower AIC (13122) than the original Poisson model (13367). However, comparing AIC between Gaussian and Poisson GLMs is controversial given the different fitting of each model, so I used log likelihood as well.
+
+```{r}
+# log likelihood comparison
+logLik(m1)
+logLik(m1.2)
+```
+
+The Gaussian model has a higher log likelihood than the Poisson, indicating that a normal distribution might be a better fit for the age data. Nonetheless, since age is a positive, discrete numeric variable and the difference in log likelihood is relatively small, I will continue assessing the Poisson model.
+
+```{r fig.asp = 1}
+par(mfrow=c(2,2))
+plot(m1, main = "Full Model (Poisson)")
+```
+
+The residuals from the full model show distinct patterns. There is a strong clumping of points in the Pearson residuals, and the upper tail in the QQ plot strays significantly. These plots show that the model is not a very good fit for the data; if this were a more complete project, significant work would be needed to improve the model.
+
+Just to be sure, I compared the residual plots with the Gaussian model, and found similar patterns.
+
+```{r fig.asp = 1}
+par(mfrow=c(2,2))
+plot(m1.2, main ="Gaussian")
+```
+
+```{r}
+# goodness of fit: pseudo-R^2
+pR2 <- 1 - (m1$deviance / m1$null)
+pR2
+```
+
+
+```{r fig.asp = 1}
+# Added-variable Plots
+avPlots(m1, col = colors, pch = 16, cex = 0.5)
+```
+
+Plotting the residuals with Added-Variable plots highlights the direction and strength of each variable's relationship to age, holding all others constant at their means. Diameter has a slight, positive relationship to age; shell weight has the strongest, positive influence; shucked weight has a weaker and negative relationship.
+
+```{r}
+# Diameter
+aba.pred.D <- emmeans(m1, spec = ~ Diameter + Shell.wt + Shucked.wt + Sex,
+                      at = list(Diameter = 
+                                  seq(min(aba$Diameter),
+                                      max(aba$Diameter), 
+                                      length.out = 100)))
+aba.pred.D <- as.data.frame(aba.pred.D)
+
+D.plot <- ggplot(aba, aes(x = Diameter, y = Age, col = Sex)) +
+  geom_point(size = 0.75) +
+  scale_color_manual(name = "Sex", values = pal1) +
+  geom_line(data = aba.pred.D, 
+            aes(y = exp(emmean)), col = "blue3") +
+  geom_line(data = aba.pred.D, 
+            aes(y = exp(emmean + SE)), col = "orchid3", linetype = 2) +
+  geom_line(data = aba.pred.D, 
+            aes(y = exp(emmean - SE)), col = "orchid3", linetype = 2) +
+  theme_minimal() +
+  xlab("Diameter")+
+  labs(title = bquote("Abalone Age ~ " ~ bold("Diameter") ~ " + Shell Weight + Shucked Weight + Sex")) 
+
+D.plot
+```
+
+```{r}
+#Shell weight
+aba.pred.Sw <- emmeans(m1, spec = ~ Diameter + Shell.wt + Shucked.wt + Sex, 
+                       at = list(Shell.wt = 
+                                   seq(min(aba$Shell.wt), 
+                                       max(aba$Shell.wt), 
+                                       length.out = 100)))
+aba.pred.Sw <- as.data.frame(aba.pred.Sw)
+
+Sw.plot <- ggplot(aba, aes(x = Shell.wt, y = Age, col = Sex)) +
+  geom_point(size = 0.75) +
+  scale_color_manual(name = "Sex", values = pal1) +
+  geom_line(data = as.data.frame(aba.pred.Sw), 
+            aes(y = exp(emmean)), col = "blue") +
+  geom_line(data = aba.pred.Sw, 
+            aes(y = exp(emmean + SE)), col = "orchid3", linetype = 2) +
+  geom_line(data = aba.pred.Sw, 
+            aes(y = exp(emmean - SE)), col = "orchid3", linetype = 2) +
+  theme_minimal()+
+  xlab("Shell Weight") +
+  labs(title = bquote("Abalone Age ~ Diameter + " ~ bold("Shell Weight") ~ " + Shucked Weight + Sex"))
+
+Sw.plot
+```
+
+```{r}
+#Shucked weight
+aba.pred.Skw <- emmeans(m1, spec = ~ Diameter + Shell.wt + Shucked.wt + Sex, 
+                        at = list(Shucked.wt 
+                                  = seq(min(aba$Shucked.wt),
+                                        max(aba$Shucked.wt), 
+                                        length.out = 100)))
+aba.pred.Skw <- as.data.frame(aba.pred.Skw)
+
+Skw.plot <- ggplot(aba, aes(x = Shucked.wt, y = Age, col = Sex)) +
+  geom_point(size = 0.75) +
+  scale_color_manual(name = "Sex", values = pal1) +
+  geom_line(data = aba.pred.Skw,
+            aes(y = exp(emmean)), col = "blue") +
+  geom_line(data = aba.pred.Skw, 
+            aes(y = exp(emmean + SE)), col = "orchid3", linetype = 2) +
+  geom_line(data = aba.pred.Skw, 
+            aes(y = exp(emmean - SE)), col = "orchid3", linetype = 2) +
+  theme_minimal()+
+  xlab("Shucked Weight")+
+  labs(title = bquote("Abalone Age ~ Diameter + Shell Weight + " ~ bold("Shucked Weight") ~ " + Sex"))
+
+Skw.plot
+```
+
+```{r}
+#goodness of fit G^2
+1-pchisq(m1$deviance, m1$df.resid)
+```
+
+
+Abalone age can be described by the generalized linear model $Age ~ Diameter + Shell Weight + Shucked Weight + Sex$ fitted with a Poisson distribution (intercept = 1.83, se = 0.057, z = 31.9, p < 0.001). Shell weight had the strongest relationship to age (slope = 1.657, se = 0.083 z = 19.87, p < 0.001), followed by shucked weight (slope = -0.969, se = 0.058, z = -16.81, p < 0.001), then diameter (slope = 1.099, se = 0.186, z = 5.91, p < 0.001). Although I kept it in my final model for biological/assignment reasons, sex did not contribute significantly (slope = -0.0009, z = -0.079, p < 0.937). 
+
+The model is not a great fit, only explaining 37.1% of the variance in the data (pseudo-R$^2$ = 0.371, G$^2$ = 1). This can also be seen best in the plot of Age vs. Shucked Weight, where the model poorly predicts age at low or high shucked weights.
+
+
+Figures show real data for abalone age by each main effect - diameter, shell weight, and shucked weight - as well as sex. Blue lines show exponentially transformed estimated marginal means from the model across the range of predictor values; purple lines show transformed EMM +/- standard error. Values were transformed per the log link in a Poisson generalized linear model.
+
+
+
+```{r}
+aba2 <- abalone[,c("Age", "Sex", "Diameter", "Shell.wt", "Shucked.wt")]
+# resetting the dataframe for re-ordering purposes
+
+plot(aba2$Shell.wt, aba2$Age,
+     ylab="Abalone Age (years)", 
+     xlab="Shell Weight", 
+     main = "Abalone Age - Real and Predicted",
+     pch=16, col=colors, cex = 0.5)
+
+aba2$Sex <- as.factor(aba2$Sex)
+aba2 <- aba2[order(aba2$Shell.wt),]
+lines(aba2$Shell.wt, predict(m1, type="response"), col="blue", lwd=1)
+legend("topright", legend = levels(aba2$Sex), col = pal1, pch = 16, cex = 0.75)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+

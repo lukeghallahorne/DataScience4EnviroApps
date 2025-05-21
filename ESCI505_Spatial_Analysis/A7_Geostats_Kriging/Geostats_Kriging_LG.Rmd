@@ -1,0 +1,228 @@
+---
+title: "Geostats Kriging"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, error = FALSE}
+library(sf)
+library(gstat)
+library(tidyverse)
+library(terra)
+library(tidyterra)
+library(PNWColors)
+```
+
+```{r}
+sf_2_rast <-function(sfObject,variableIndex = 1){
+  # coerce sf to a data.frame
+  dfObject <- data.frame(st_coordinates(sfObject),
+                         z=as.data.frame(sfObject)[,variableIndex])
+  # coerce data.frame to SpatRaster
+  rastObject <- rast(dfObject,crs=crs(sfObject))
+  
+  names(rastObject) <- names(sfObject)[variableIndex]
+  
+  return(rastObject)
+}
+```
+
+
+# Data
+Annual precipitation data for California.
+```{r}
+# Precipitation data
+prcpCA <- readRDS("data/prcpCA.rds")
+# CA Grid coordinates
+gridCA <- readRDS("data/gridCA.rds")
+
+# make into sf
+prcpCA_sf <- prcpCA |>
+  st_as_sf(coords = c("X", "Y")) |>
+  st_set_crs(3310)
+
+gridCA_sf <- gridCA |>
+  st_as_sf(coords = c("X", "Y")) |>
+  st_set_crs(3310)
+
+prcpCA_sf$logANNUAL <- log(prcpCA_sf$ANNUAL)
+
+pal1 <- pnw_palette("Lake", n = nrow(prcpCA))
+
+
+ggplot() +
+  geom_sf(data = prcpCA_sf, aes(fill = ANNUAL, size = ANNUAL),
+          color = "white", shape = 21, alpha = 0.8) +
+  labs(title = "Total Annual Precipitation") +
+  scale_size(guide = "none") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Annual Precip (mm)",
+                       na.value = "transparent") 
+```
+
+# Probabilisitic Interpolation with Kriging
+## Observational Variogram
+```{r}
+# create observational variogram of annual precipitation
+prcpVar <- variogram(ANNUAL~1, prcpCA_sf)
+
+plot(prcpVar, pch = 20, cex = 1.5, col = "black",
+     ylab = expression("Semivariance ("*gamma*")"),
+     xlab = "Distance (m)", main = "Annual Precipitation (mm)")
+```
+
+The observational variogram appears mainly isotropic, with the range around 10000 but a slope within the variation of semivariance points at the sill. There is likely a slight gradient in precipitation across the extent, in addition to spatial autocorrelation at distances below 100 km.
+
+Estimates:
+
+- Range: 100,000
+- Sill: 120,000 to 170,000
+- Nugget: 25,000
+
+### Directional Observational Variograms
+```{r}
+# use alpha = c() argument to assess impact of directionality
+prcpVarD <- variogram(ANNUAL~1, data = prcpCA_sf, 
+                      alpha = c(0, 45, 90, 135))
+plot(prcpVarD, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (m)",
+     main = "Annual Precipitation (mm)")
+```
+
+There appears to be a slight gradient in the data but primarily spatial structure at distances below 100km.
+
+## Variogram Model
+### Spherical Model
+```{r}
+# initial estimates for sill, range, and nugget
+# psill = sill - nugget
+sph.model <- vgm(psill = 125000, model = "Sph", range = 150000, nugget = 25000)
+  # fit model to leadVar
+sph.fit <- fit.variogram(object = prcpVar, model = sph.model)
+sph.fit
+# plot fitted variogram
+plot(prcpVar, model = sph.fit, pch = 20, cex = 1.5, col = "black",
+     ylab = expression("Semivariance ("*gamma*")"),
+     xlab = "Distance (m)", main = "Annual Precipitation (mm)",
+     sub = "Points: Empirical, Line: Spherical Model")
+```
+
+The spherical model does not fit the empirical variogram very well due to the anisotropy.
+
+### Exponential Model
+```{r}
+# initial estimates for sill, range, and nugget
+sph.model <- vgm(psill = 120000, model = "Exp", range = 100000, nugget = 25000)
+
+  # fit model to leadVar
+sph.fit <- fit.variogram(object = prcpVar, model = sph.model)
+
+# plot fitted variogram
+plot(prcpVar, model = sph.fit, pch = 20, cex = 1.5, col = "black",
+     ylab = expression("Semivariance ("*gamma*")"),
+     xlab = "Distance (m)", main = "Annual Precipitation (mm)",
+     sub = "Points: Empirical, Line: Spherical Model")
+```
+
+The exponential model fits the spatial structure better both at short distances and as variance increases past the range.
+
+## Cross Validation
+Moving forward with an exponential model, we need to test the model with k-fold cross validation. I used the "standard" of k = 10.
+
+```{r}
+# observational variogram
+prcpVar <- variogram(ANNUAL~1, prcpCA_sf)
+# Variogram model
+prcpmodel <- vgm(psill = 120000, model = "Exp", range = 100000, nugget = 25000)
+# fit variogram model
+prcpFit <- fit.variogram(object = prcpVar, model = prcpmodel)
+
+# k-fold cross validation
+prcpKrige_kfold_sf <- krige.cv(formula = ANNUAL ~ 1,
+                               locations = prcpCA_sf,
+                               model = prcpFit,
+                               nfold = 10,
+                               verbose = FALSE)
+prcpKrige_kfold_sf
+
+# below does not account for the R^2 and RMSE across each individual fold - need to pull predicted values from each fold separately
+rsq <- cor(prcpKrige_kfold_sf$observed, prcpKrige_kfold_sf$var1.pred)^2
+rsq
+```
+
+The k-fold cross validation $R^2$ is 0.8995 from the observed and model-predicted values, with k = 10 folds.
+
+# Full Model
+
+```{r}
+prcpVar <- variogram(ANNUAL~1, prcpCA_sf)
+prcpmodel <- vgm(psill = 120000, model = "Exp", range = 100000, nugget = 25000)
+prcpFit <- fit.variogram(object = prcpVar, model = prcpmodel)
+prcpGstat <- gstat(formula = ANNUAL~1, locations = prcpCA_sf, 
+                   model = prcpFit)
+prcpKrige_sf <- predict(prcpGstat, newdata = gridCA_sf)
+prcpKrige_sf
+```
+
+```{r}
+# convert to raster
+prcpKrige_rast <- sf_2_rast(prcpKrige_sf)
+prcpKrige_rast
+```
+
+```{r}
+ggplot() +
+  geom_spatraster(data = prcpKrige_rast, aes(fill = var1.pred), 
+                    alpha = 0.9) +
+  labs(title = "Total Annual Precipitation",
+       x = "Longitude", y = "Latitude") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Annual Precip (mm)",
+                       na.value = "transparent") +
+  theme_minimal()
+
+```
+
+Annual precipitation is highest in California along the northwestern coast and along the Western mountains above 36$^\circ$N. The Kriging predictions (probabilistic interpolation) appear smoother and less spotty than those created with IDW (deterministic interpolation). The small gradient seen in the directional variograms is likely due to the North-South spread of average precipitation across the extent.
+
+```{r warning = FALSE}
+ggplot() +
+  geom_spatraster(data = prcpKrige_rast, aes(fill = var1.pred), 
+                    alpha = 0.9) +
+  labs(title = "Total Annual Precipitation",
+       subtitle = "Probabilistic (Exponential) Interpolation with Kriging",
+       x = "Longitude", y = "Latitude",
+       caption = "Points show empirical data.") +
+  scale_fill_gradientn(colors = (pal1),
+                       name = "Annual Precip (mm)",
+                       na.value = "transparent") +
+  geom_sf(data = prcpCA_sf, aes(fill = ANNUAL),
+          color = "white", shape = 21, alpha = 0.6) +
+  annotate(geom = "text", x = 300000, y = 400000, 
+           label = expression(paste(R^{2}, " = 0.8995"))) +
+    theme_minimal()
+
+
+
+```
+
+
+
+
+
+

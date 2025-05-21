@@ -1,0 +1,572 @@
+---
+title: 'Assignment 7: PCoA & nMDS'
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning = FALSE, message = FALSE, results = FALSE}
+library(mvabund) # examine spider dataset using ?spider
+library(tidyverse) # ggplot()
+library(GGally) # ggpairs()
+library(vegan) # vegdist()
+library(corrplot) # corrplot()
+library(ape) # pcoa()
+library(PNWColors) # pnw_palette()
+library(dendextend) # color_branches(), color_labels()
+library(ggpubr) # ggarrange()
+```
+
+# Introduction {.tabset}
+These data consist of community abundance for twelve hunting spider species, as well as six environmental variables describing the species' habitats. 
+
+Spider Species:
+
+- *Alopecosa accentuata*
+- *Alopecosa cuneata*
+- *Alopecosa fabrilis*
+- *Arctosa lutetiana*
+- *Arctosa perita*
+- *Aulonia albimana*
+- *Pardosa lugubris*
+- *Pardosa monticola*
+- *Pardosa nigriceps*
+- *Pardosa pullata*
+- *Trochosa terricola*
+- *Zora spinimana*
+
+Species are abbreviated with the first four letters of the genus name followed by the first four letters of the species name.
+
+Environmental Variables:
+
+- bareSand (yes, no): Is there bare sand in the plot?
+- leafLitter (yes, no): Are there fallen leaves and/or twigs on the plot?
+- reflection: Numeric variable representing reflection of the soil surface with a cloudless sky. Higher values represent greater reflection.
+
+Using these data, I will assess the questions:
+
+- **Is there an observable pattern in these observations of hunting spider communities (i.e., do the samples cluster)?**
+- **Do the environmental variables explain any of those patterns?**
+
+```{r}
+spider <- read.csv("Data/07 spiders.csv", stringsAsFactors = TRUE)
+```
+
+```{r include = FALSE}
+head(spider)
+str(spider)
+summary(spider)
+```
+
+The dataset has 28 observations/samples of integer counts for each spider species (n = 12, range 0 to 135). It also includes two factor variables, bareSand and leafLitter, measured as yes/no, and one continuous variable, reflection.
+
+## Pairs Plot 1 [,4:9]
+
+```{r message = FALSE}
+ggpairs(spider[,4:9])
+```
+
+## Pairs Plot 2 [,10:15]
+```{r message = FALSE}
+ggpairs(spider[,10:15])
+```
+
+## Correlation
+
+```{r}
+M <- cor(spider[,-c(1:3)])
+corrplot(M)
+```
+
+The pairs plots above show that these data are not normally distributed. The distribution plots along the diagonals show most counts are in low numbers, with occasional increases in higher numbers, but no variables show the characteristic bell-curve shape of a normal distribution. Moreover, the pairwise plots show a strong tendency toward zeroes and do not form the expected elliptical patterns. 
+
+The correlation plot shows that most variables are moderately correlated, not entirely independent (r ~ 0) nor completely overlapping (r ~ +/- 1). Hence, multivariate methods are appropriate for these data.
+
+
+
+# Methods
+## Ordination
+### Principle Coordinates Analysis {.tabset}
+I used a Principle Coordinates Analysis (PCoA) for ordination of the data to better visualize any observable patterns in hunting spider communities. After comparing PCoAs with Euclidean, standardized Euclidean, and Bray-Curtis distances/dissimilarities, I chose the Bray-Curtis measures for my final ordination. Bray-Curtis better accounts for data with many repeated zeroes like the spider community data, and preliminary plots showed that samples were grouped more distinctly than with Euclidean measures. The first three Principle Coordinate axes explained 70% of the variation among communities (PCoA1 = 33.4%, PCoA2 = 24.5%, PCoA3 = 11.9%), so I compared those three to assess any patterns.
+
+#### PCoA: Euclidean {.tabset}
+
+```{r}
+# response variable matrix
+Y <- as.matrix(spider[,4:15])
+# Distance/dissimilarity matrix with Euclidean distances
+spider.distEu <- vegdist(Y, method = "euclidean")
+# PCoA on distance/dissimilarity matrix
+spider.pcoaEu <- pcoa(spider.distEu)
+```
+
+```{r results = FALSE}
+# eigenvalues, relative, and broken stick
+spider.pcoaEu$values[,1:3]
+```
+
+##### Scree Plot
+```{r}
+# scree plot of relative eigenvalues
+plot(spider.pcoaEu$values[,2], type = "b")
+```
+
+The scree plot shows that the majority of variance in the dataset is explained by the first axis, with diminishing returns on variance explained by further axes. This appears promising, but since these are community count data with many zeroes, Euclidean distances over-weigh higher values, meaning that we are likely losing much of the actual variance in communities with this ordination.
+
+```{r results = FALSE}
+spider.pcoaEu$vectors[,1:2]
+```
+
+```{r}
+plot.df.pcoaEu <- data.frame(
+  axis1 = spider.pcoaEu$vectors[,1],
+  axis2 = spider.pcoaEu$vectors[,2],
+  bareSand = spider$bareSand,
+  leafLitter = spider$leafLitter,
+  reflection = spider$reflection)
+
+```
+
+##### Axes 1 & 2
+```{r}
+pal1 <- PNWColors::pnw_palette("Sunset2", n = 2)
+
+p1 <- ggplot(data = plot.df.pcoaEu,
+             mapping = aes(x = axis1, y = axis2,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (69%)") +
+  ylab("Axis 2 (16%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p1
+```
+
+Since the first two axes explained a total of 85% of the variation, I only compared those. Mapping leaf litter as color and bare sand as shape showed little apparent grouping along the axes. Leaf litter (yes) appears concentrated around low values of axis 1 but both positively and negatively, and generally positive in axis 2.
+
+```{r}
+p1.2 <- ggplot(data = plot.df.pcoaEu,
+             mapping = aes(x = axis1, y = axis2,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (69%)") +
+  ylab("Axis 2 (16%)") +
+  theme_bw()
+p1.2
+```
+
+Replacing reflection for color, there is a slight trend along Axis 2 of low reflection positive and high reflection negative, but this is broken by the cluster of points at high values of Axis 1. There are no easily discernible patterns for the external variables. 
+
+
+#### PCoA: Standardized Euclidean {.tabset}
+
+```{r}
+# response variable matrix
+Y <- as.matrix(spider[,4:15])
+# standardize response matrix
+Ys <- scale(Y)
+# Distance/dissimilarity matrix with Euclidean distances
+spider.distEuS <- vegdist(Ys, method = "euclidean")
+# PCoA on distance/dissimilarity matrix
+spider.pcoaEuS <- pcoa(spider.distEuS)
+```
+
+```{r results = FALSE}
+# eigenvalues, relative, and broken stick
+spider.pcoaEuS$values[,1:3]
+```
+
+##### Scree Plot
+```{r}
+# scree plot of relative eigenvalues
+plot(spider.pcoaEuS$values[,2], type = "b")
+```
+
+The scree plot shows that with standardized Euclidean measures, three axes are needed to explain the majority of variation (57%: PCoA1 = 25.9%, PCoA2 = 17.5%, PCoA3 = 13.4%).
+
+##### Axes 1 & 2
+```{r results = FALSE}
+spider.pcoaEuS$vectors[,1:3]
+```
+
+```{r}
+plot.df.pcoaEuS <- data.frame(
+  axis1 = spider.pcoaEuS$vectors[,1],
+  axis2 = spider.pcoaEuS$vectors[,2],
+  axis3 = spider.pcoaEuS$vectors[,3],
+  bareSand = spider$bareSand,
+  leafLitter = spider$leafLitter,
+  reflection = spider$reflection)
+```
+
+```{r}
+p1 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis1, y = axis2,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (43%)") +
+  ylab("Axis 2 (15%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p1
+```
+
+```{r}
+p1.2 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis1, y = axis2,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (43%)") +
+  ylab("Axis 2 (15%)") +
+  theme_bw()
+p1.2
+```
+
+##### Axes 1 & 3
+
+```{r}
+p2 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis1, y = axis3,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (43%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p2
+```
+
+```{r}
+p2.2 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis1, y = axis3,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (43%)") +
+  ylab("Axis 3 (12%)") +
+  theme_bw()
+p2.2
+```
+
+##### Axes 2 & 3
+
+```{r}
+p3 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis2, y = axis3,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p3
+```
+
+```{r}
+p3.2 <- ggplot(data = plot.df.pcoaEuS,
+             mapping = aes(x = axis2, y = axis3,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") + 
+  theme_bw()
+p3.2
+```
+
+#### 
+
+Leaf litter separates out partially along Axis 2 with standardized Euclidean measures. There also appears to be an emerging group of bare sand and no leaf litter at high values of Axis 1 and 2, though the rest of the points to not follow apparent patterns.
+
+Reflection is more clearly reflected along Axis 2 in this ordination, with low values of reflection at points with negative PCoA2 scores and high reflection at points with positive scores. 
+
+
+
+#### PCoA: Bray-Curtis {.tabset}
+
+```{r}
+# response variable matrix
+Y <- as.matrix(spider[,4:15])
+# Distance/dissimilarity matrix with Bray-Curtis distances
+spider.distBray <- vegdist(Y)
+# PCoA on distance/dissimilarity matrix
+spider.pcoaBray <- pcoa(spider.distBray)
+```
+
+```{r results = FALSE}
+# eigenvalues, relative, and relative corrected eigenvalues
+spider.pcoaBray$values[,1:3]
+```
+
+##### Scree Plot
+
+```{r}
+# scree plot of relative corrected eigenvalues
+plot(spider.pcoaBray$values[,3], type = "b")
+```
+
+This scree plot shows that the first three axes explain the majority of the variance in the original dataset (70%: PCoA1 = 33.4%, PCoA2 = 24.5%, PCoA3 = 11.9%), after which each additional axis only explains a small fraction.
+
+```{r results = FALSE}
+spider.pcoaBray$vectors[,1:3]
+```
+
+##### Axes 1 & 2
+
+```{r}
+plot.df.pcoaBray <- data.frame(
+  axis1 = spider.pcoaBray$vectors[,1],
+  axis2 = spider.pcoaBray$vectors[,2],
+  axis3 = spider.pcoaBray$vectors[,3],
+  bareSand = spider$bareSand,
+  leafLitter = spider$leafLitter,
+  reflection = spider$reflection)
+```
+
+```{r}
+p1 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis2,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 2 (25%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p1
+```
+
+```{r}
+p1.2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis2,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 2 (25%)") +
+  theme_bw()
+p1.2
+```
+
+##### Axes 1 & 3
+
+```{r}
+p2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis3,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p2
+```
+
+```{r}
+p2.2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis3,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 3 (12%)") + 
+  theme_bw()
+p2.2
+```
+
+##### Axes 2 & 3
+
+```{r}
+p3 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis2, y = axis3,
+                           color = leafLitter, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal1) +
+  theme_bw()
+p3
+```
+
+```{r}
+p3.2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis2, y = axis3,
+                           color = reflection, shape = bareSand))+
+  geom_point(size = 4) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") + 
+  theme_bw()
+p3.2
+```
+
+## Cluster Analysis
+I used hierarchical clustering with Ward's linkage to determine if the spider communities naturally grouped based on species abundances. Ward's linkage is an agglomerative algorithm that minimizes the variance among points in a group, making it a good choice for these data. After visualizing the clusters with a dendrogram, I decided to cut the tree at k = 4 with four clusters, since four fairly distinct groups arise at a distance of approximately 0.75 - 1. An equivocal method would be to cut the tree with h = 1.
+
+```{r}
+spider.hcl <- hclust(spider.distBray, "ward.D2")
+spider.dend <- as.dendrogram(spider.hcl)
+pal2 <- pnw_palette("Sunset2", n = 4)
+
+spider.dend <- spider.dend |>
+  color_branches(k = 4, col = pal2) |>
+  color_labels(k = 4, col = pal2)
+
+plot(spider.dend)
+```
+
+Four groups arise in the cluster analysis, as shown by the color of branches and sample numbers. Since the groups all cluster below a distance of 1, and the next highest grouping is at a distance of 1.5, I am fairly confident in cutting the tree at four clusters.
+
+# Results
+
+
+```{r}
+spider.cut <- as.factor(cutree(spider.hcl, k = 4))
+spider.scores <- as.data.frame(wascores(spider.pcoaBray$vectors, spider[,-c(1:3)]))
+rownames(spider.scores)
+
+plot.df.pcoaBray <- data.frame(
+  axis1 = spider.pcoaBray$vectors[,1],
+  axis2 = spider.pcoaBray$vectors[,2],
+  axis3 = spider.pcoaBray$vectors[,3],
+  bareSand = spider$bareSand,
+  leafLitter = spider$leafLitter,
+  reflection = spider$reflection,
+  cluster = spider.cut)
+
+```
+
+```{r fig.asp = 1.5}
+p1 <- ggplot()+
+  geom_point(size = 3,data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis2,
+                           color = cluster)) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 2 (25%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() +
+  geom_text(data = spider.scores, aes(x = Axis.1, y = Axis.2), label = rownames(spider.scores))
+
+p1.2 <- ggplot()+
+  geom_point(size = 3, data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis3,
+                           color = cluster)) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() +
+  geom_text(data = spider.scores, aes(x = Axis.1, y = Axis.3), label = rownames(spider.scores))
+
+p1.3 <- ggplot()+
+  geom_point(size = 3, data = plot.df.pcoaBray,
+             mapping = aes(x = axis2, y = axis3,
+                           color = cluster)) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() +
+  geom_text(data = spider.scores, aes(x = Axis.2, y = Axis.3), label = rownames(spider.scores))
+
+
+ggarrange(p1, p1.2, p1.3, ncol = 1,
+             labels = c("A", "B", "C"),
+             common.legend=TRUE, legend = "right")
+
+```
+
+**Figure 1.** PCoA ordination plots of spider community data showing the first Principle Coordinate axis (33% of variance explained), second axis (25%) and third axis (12%). Colors show clusters identified with hierarchical clustering using Ward's linkage, k = 4. (A) PCoA 1 (x axis) and PCoA 2 (y axis). (B) PCoA 1 (x axis) and PCoA 3 (y axis). (C) PCoA 2 (x axis) and PCoA 3 (y axis). 
+
+```{r fig.asp=1.5}
+p2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis2,
+                           color = bareSand,
+                           shape = leafLitter, 
+                           alpha = reflection))+
+  geom_point(size = 3) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 2 (25%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() 
+
+p2.2 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis1, y = axis3,
+                           color = bareSand,
+                           shape = leafLitter, 
+                           alpha = reflection))+
+  geom_point(size = 3) +
+  coord_fixed() +
+  xlab("Axis 1 (33%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() 
+
+p2.3 <- ggplot(data = plot.df.pcoaBray,
+             mapping = aes(x = axis2, y = axis3,
+                           color = bareSand,
+                           shape = leafLitter, 
+                           alpha = reflection))+
+  geom_point(size = 3) +
+  coord_fixed() +
+  xlab("Axis 2 (25%)") +
+  ylab("Axis 3 (12%)") +
+  scale_color_manual(values = pal2) +
+  theme_bw() 
+
+ggarrange(p2, p2.2, p2.3, ncol = 1,
+             labels = c("A", "B", "C"),
+             common.legend=TRUE, legend = "right")
+```
+
+**Figure 2.** PCoA ordination plots of spider community data showing the first Principle Coordinate axis (33% of variance explained), second axis (25%), and third axis (12%). Opacity shows reflection (transparent = low reflection, solid = high reflection), color shows bare sand presence/absence, and shape shows leaf litter presence/absence. (A) PCoA 1 (x axis) and PCoA 2 (y axis). (B) PCoA 1 (x axis) and PCoA 3 (y axis). (C) PCoA 2 (x axis) and PCoA 3 (y axis). 
+
+# Discussion
+This Principle Coordinates Analysis, using Bray-Curtis distance/dissimilarity measures, explains 70% of the variance within the spider community data across the first three axes, providing a decent explanation of the variation in species abundance between sites. Spider communities separated into four identifiable clusters with hierarchical clustering using Ward's linkage. These clusters are well distinguished along the first three PCoA axes. Reflection, bare sand presence/absence, and leaf litter show some patterns among sites that coincide - though not perfectly - with groups identified in the cluster analysis.
+
+## Figure 1
+Figure 1 shows that PCoA 1 separates spider community into two clusters, 1 and 2 in the positive direction, and 3 and 4 in the negative direction. PCoA 2 further delineates the groups by separating cluster 1 (positive) and cluster 2 (negative). Groups 3 and 4 are partially separated along axis 2, but their differences are more distinct along PCoA3, with cluster 3 having positive scores and cluster 4 (along with 1 and 2) with near-zero or negative scores. 
+
+## Figure 2
+Figure 2 shows less clear but nonetheless interesting patterns with the external variables. Communities with leaf litter present (triangle shapes) have consistently positive scores on PCoA 1, coinciding with lower reflection values (more transparent). Most bare sand-absent communities have positive scores along PCoA 1 and bare sand-present communities show negative scores, although there is some overlap near 0. Axis 2 delineates points at high PCoA 1 scores, somewhat aligning with reflection but otherwise not aligning with any of the variables plotted. Axis 3 pulls four communities apart from the rest, but they do not have any particular variable that is unique to them. 
+
+Comparing figures 1 and 2, some trends between cluster group and environmental variables come to light. Sites in cluster 2 with high PCoA1 and PCOA2 scores have lower reflection and leaf litter present, while sites in cluster 4 are generally the opposite, with bare sand present and high reflection values. Cluster 3 has no leaf litter but a variety of sand presence/absence, although consistently high reflection values. Cluster 4 ranges across the environmental variables, with sites both with or without sand and leaf litter, and sites with a range of reflection values.
+
+# Conclusions
+
+Hunting spider communities do show observable patterns in their species abundances and cluster into four groups. The environmental variables of reflection, bare sand presence/absence, and leaf litter presence/absence align roughly with some of these groups, but at least one shows a mix of all environmental variables. This suggests that while reflection and habitat type explain some of the variation between spider communities, there are other factors at work.
+
+Spider communities could be further distinguished by mapping the original species (or species with the strongest influence over the PCoA axes) onto the ordination plots to help with interpretation of the axes.
+
+# Reflection
+
+I think I understand PCoA well - I would like to run this through with nMDS as well before the final assignment to compare those ordinations and see if nMDS provides a better plot. I was a little unsure if the straight Euclidean distance PCoA was even worth including, but I ultimately did because it was quite different from the standardized Euclidean PCoA and exemplified how not using an appropriate distance measure can give misleading results.
+
+After class today, I would also like to map the species scores back onto the plots and reassess the groups I found with clustering, but I do not have time this evening to add it to the draft.
+
+
+
+

@@ -1,0 +1,152 @@
+---
+title: "Autocorrelation HW"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message = FALSE}
+library(gstat)
+library(ncf)
+library(spdep)
+library(sf)
+library(tidyverse)
+library(tmap)
+```
+
+## Map: Bird Species Richness in Mexico
+```{r message = FALSE}
+birds_sf <- readRDS("Data/birdRichnessMexico.rds")
+
+tmap_mode("view")
+
+tm_shape(birds_sf) + 
+  tm_symbols(alpha = 0.7, size = "nSpecies", 
+             col = "nSpecies", legend.size.show = FALSE)
+
+```
+
+Mapping bird richness across Mexico appears to show patterns of higher richness along the coasts and lower richness along Baja California and northern central Mexico. Overall, there looks to be a trend of decreasing species richness the further North the study site is. The colors especially highlight how sample points appear to share similar richness to nearby points. This makes sense ecologically, since nearby places are typically more likely to have similar habitat. 
+
+## Variogram
+
+```{r include = FALSE}
+# variogram cloud
+birdsVarCloud <- variogram(nSpecies~1, birds_sf, cloud = TRUE)
+plot(birdsVarCloud, pch = 20, cex = 1.5, col = "black", alpha = 0.1,
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (km)",
+     main = "Bird Species Richness (Cloud)")
+```
+
+```{r}
+# variogram isotropic 
+birdsVar <- variogram(nSpecies~1, birds_sf, cloud = FALSE)
+plot(birdsVar, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (km)",
+     main = "Bird Species Richness")
+
+```
+
+The variogram shows an overall trend of autocorrelation across distances. Since the trend is more-or-less linear, which indicates that there is likely a gradient in species richness underlying these data. The trend does look steeper below 200km - I suspect there is stronger autocorrelation of bird species richness at closer distances that overpowers the gradient, but beyond 200km the gradient overtakes any other patterns.
+
+## Discrete Correlogram
+
+```{r}
+# retrieve x, y, and lead values for convenience
+birdsX <- st_coordinates(birds_sf)[,1]
+birdsY <- st_coordinates(birds_sf)[,2]
+birdsRich <- birds_sf$nSpecies
+
+# saving as dataframe for (possibly) easier use
+birdsDF <- data.frame(st_coordinates(birds_sf),nSpecies=birds_sf$nSpecies)
+
+```
+
+```{r}
+# make correlogram object - using ncf package
+birdsId <- correlog(x = birdsX, y = birdsY, z = birdsRich,
+                  increment = 50, resamp = 100, quiet = TRUE)
+
+# determine reasonable limit for distances while avoiding edge effects
+max(dist(st_coordinates(birds_sf)))/3
+
+# max distance divided by 3 is 1037.55, so limit = 1000 km
+```
+
+```{r}
+# plot discrete correlogram
+plot(birdsId, xlim = c(0,1000))
+abline(h = 0, lty = "dashed")
+```
+
+Species richness across sites ranged from 50 to 450, so I chose a bin-width of 50 for the discrete correlogram. Black dots indicate a significant p-value from permutation tests with an alpha of 0.05. The `correlog()` function from the `ncf` package weighs distances as 1 within an increasing increment, and distances beyond as 0.
+
+The correlogram shows that species richness is correlated with distance across sites in Mexico at distances below 200 km. Beyond 200km, the correlation decreases in a steady, nearly linear trend. This is indicative of some kind of gradient within the data that is overpowered by some other pattern only at short distances.
+
+
+## Continuous Correlogram
+```{r}
+# make continuous correlogram object with spline.correlog()
+birdsIc <- spline.correlog(x = birdsX, y = birdsY, z = birdsRich,
+                  resamp = 100, quiet = TRUE)
+```
+
+```{r}
+# plot continuous correlogram
+plot(birdsIc, xlim = c(0,1000))
+abline(h = 0, lty = "dashed")
+```
+
+The continuous correlogram supports the trends shown in the discrete correlogram. The trend is steepest at small distances (~ below 200km), but then levels off and slowly approaches 0 between 200km and 1000km.
+
+## Comparing Variogram and Correlogram
+Both approaches to assessing autocorrelation - semivariance with a variogram and Moran's I with correlograms - suggest similar patterns in bird species richness across Mexico. Species richness is autocorrelated across distances out to 1000km, with decreasing correlation (Moran's I) and slower increase in semivariance (variogram) as distance increases.
+
+However, neither approaches the asymptote we would expect as distances get quite large. This implies that there is a gradient in species richness across sites. Due to the spike in autocorrelation (and steeper increase in semivariance) at distances below 200km, it seems there is greater correlation of richness across space beyond the gradient for nearby sites. With these plots alone, we can't quite tell where or to what degree the gradient is, just that one is likely present. Just from looking at the map, there appears to be a Northward gradient of decreasing richness. However, we can use directional variograms to assess the direction of the gradient, and potentially isolate the range of distances that overshadow the gradient.
+
+## Directional Variograms
+```{r}
+# use alpha = c() argument to assess impact of directionality
+birdsVarD <- variogram(nSpecies~1, data = birds_sf, 
+                      alpha = c(0, 45, 90, 135))
+plot(birdsVarD, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (km)",
+     main = "Bird Species Richness")
+```
+
+Directional (anisotropic) variograms use ellipses with the primary axis oriented a number of degrees from vertical (i.e., 0 = North-South, 45 = Northeast-Southwest, 90 = East-West, 135 = Southeast-Northwest). Variograms that have strongly linear trends indicate the direction of the gradient I identified earlier. Variograms with orthogonal direction to the gradient will therefore highlight any patterns that are separate from the gradient.
+
+With our bird richness data, the most linear trend occurs at a 135$^\circ$, suggesting that the gradient in species richness runs Southeast-Northwest. Both 45$^\circ$ (NE-SW) and 90$^\circ$ (E-W) produce variograms with patterns more typical of autocorrelation at low values with asymptotic behavior at higher distances. The North-South variogram was very similar to the non-directional variogram, with some spikes at lower distances.
+
+Interestingly, some directional variograms show a decrease in semivariance at very high distances (most notable in the 90$^\circ$ plot). This implies that sites that are very far apart might be negatively correlated with each other - however, the extent geometry is important to consider here. The North-South range of Mexico is much greater than the East-West range, so our limitation of 1000 km may not have still been appropriate for a directional variogram focusing on the East-West direction. We are likely getting edge effects at high distances in the 90$^\circ$ and 45$^\circ$ variograms. 
+
+```{r}
+birdsVarD <- variogram(nSpecies~1, data = birds_sf, 
+                      alpha = c(90, 105, 120, 135, 150, 165))
+plot(birdsVarD, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (km)",
+     main = "Bird Species Richness")
+```
+
+I further compared closer angles around 135$^\circ$ to see if there was a better angle to represent the gradient. At smaller angles than 135$^\circ$ (i.e., directions closer to East-West), semivariance starts to trail off asymptotically at higher distances. At distances above 135$^\circ$ (i.e., directions closer to North-South), a spike in semivariance starts to appear in distances below 200 km. Hence, I conclude that bird species richness is along a roughly SE-NW spatial gradient.
+
+To look at patterns separate from this gradient, I focused on the directional variogram at 90$^\circ$ to the gradient direction (45$^\circ$, NE-SW). It is much more noticeable that there is autocorrelation distinct from the gradient at distances below 200km, as shown by the linear trend between distance and semivariance that then tapers off.
+
+Looking back at the map, we can see the SE-NW trend reflected across Mexico, with greater species richness in the southeast and decreasing as we travel north. This follows with energy availability and global trends of biodiversity as you move away from the equator. Closer to the equator, where energy exchange is higher and more consistent throughout the year (warmer temperatures, less seasonality, greater humidity, etc.), biodiversity tends to be higher. As we move away from the equator and energy becomes more limited, fewer different species coexist within the same space due to increased competition. It appears that bird species richness in Mexico coincides with this general pattern. 
+
+Within this pattern, we can still see small clusters of similar richness. The next step would be to attempt to predict the species richness in an unsurveyed location by modeling the gradient and using that model to assess any other patterns within the data. 
+

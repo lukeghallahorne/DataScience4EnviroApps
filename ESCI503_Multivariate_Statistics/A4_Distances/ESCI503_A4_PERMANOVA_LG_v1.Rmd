@@ -1,0 +1,199 @@
+---
+title: "Assignment 4: PERMANOVA"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning=FALSE}
+library(vegan)
+library(tidyverse)
+library(GGally)
+```
+
+# Introduction.
+
+Fish community composition is one of many factors that could be affected by changes in seagrass abundance, as seagrass beds provide habitat for many marine animals.
+In Chesapeake Bay, seagrass beds have been diminishing over past decades due to lower water clarity and higher temperatures.
+Sobocinski et al. (2013) used historical and present fish capture data to assess the impact of dwindling seagrass habitat on fish community composition.
+In particular, I will use these data to answer the question: **Do present day fish populations differ from historical ones in the Chesapeake Bay?**
+
+# Methods.
+
+## Loading Data.
+
+First, I load the data and examine the structure of the dataframe.
+I save the response variables as a matrix, as needed for the permutation function.
+
+```{r message=FALSE}
+#Data Loading
+fish <- read.csv("Data/fish_assignment.csv", stringsAsFactors = TRUE)
+# head(fish)
+# str(fish)
+
+Y <- as.matrix(fish[,3:9])
+```
+
+The response variables in the dataset are counts of fish species: atlantic silverside, bay anchovy, ducky pipefish, mummichog, northern pipefish, silver perch, and spot.
+
+## Normality.
+
+I then test for normality of response variables and correlation between them using a pairs plot matrix with all seven fish counts, colored by present or historical data set.
+
+```{r message = FALSE}
+# Normality
+p1 <- ggpairs(fish[,c(3:9)], aes(color = fish$Data.Set))+
+  theme_bw()
+p1
+```
+
+Data for each fish species appears quite non-normal, with heavy skewing towards zero values (unsurprising for community count data).
+Most fish counts have moderate correlation with each other, ranging from -0.2 to 0.2.
+This justifies the use of multivariate methods to assess if fish community composition has changed from historical pulls to present.
+Given the very non-normal data, a PERMANOVA will be needed instead of a MANOVA, which assumes normality.
+
+## Dispersion: Dissimilarity Measures.
+
+Next, I creat dissimilarity matrices with different measurements to assess dispersion between the variables.
+
+### Euclidean.
+
+I start with Euclidean distances.
+
+```{r}
+
+# Euclidean
+# 1) Create dissimilarity matrix
+fish.dis <- vegdist(Y, method = "euclidean")
+
+fish.set <- fish$Data.Set
+fish.mod1 <- betadisper(fish.dis, fish.set)
+anova(fish.mod1)
+plot(fish.mod1)
+```
+
+When measured with Euclidean distances, mean distances to the median of each group (historic and present) were significantly different from each other ($F$~1,384~ = 12.1, p < 0.001).
+The plot of dissimilarity measures shows that the data are quite skewed towards zeros.
+Euclidean measurements are likely not the best distance measures for these data.
+
+### Standardized Euclidean.
+I next examine the standardized Euclidean distances.
+
+```{r}
+
+# Standardized Euclidean
+Ys <- scale(Y)
+fish.dis2 <- vegdist(Ys, method = "euclidean")
+fish.set <- fish$Data.Set
+fish.mod2 <- betadisper(fish.dis2, fish.set)
+anova(fish.mod2)
+plot(fish.mod2)
+```
+
+Standardizing prior to measuring Euclidean distance resulted in a significant difference between mean distance to the median for historic vs present data sets ($F$~1,384~ = 8.5, p = 0.0037).
+The distances are more evenly spread, as seen in the plot of principle coordinate axes 1 and 2, but there is still some wide spread, particularly in the historic data.
+
+### Bray-Curtis.
+
+I finally check the distance measures using Bray-Curtis measurements, which are typically appropriate for count data with many zeros.
+
+```{r}
+# Bray-Curtis
+fish.dis3 <- vegdist(Y, method = "bray")
+
+fish.set <- fish$Data.Set
+fish.mod3 <- betadisper(fish.dis3, fish.set)
+anova(fish.mod3)
+plot(fish.mod3)
+```
+
+Bray-Curtis distance measures show no significant difference in mean distance to the median ($F$~1,384~ = 0.14, p = 0.71).
+The PCoA plot shows that the measures are much more evenly spread with Bray-Curtis.
+
+Since these data are count data with many zeros, the Bray-Curtis distance measures better represent the dissimilarity between points and I will continue with the analysis using that distance matrix.
+
+## PERMANOVA.
+
+To perform the PERMANOVA, I first set the seed for replicability, then perform a permutation analysis of variance between historic and present pulls with $Y \sim Data.set$ as my model.
+
+```{r}
+set.seed(42)
+ado1 <- adonis2 (Y ~ fish$Data.Set, method = "bray")
+ado1
+```
+
+The model shows that fish community composition in Chesapeake Bay is significantly different between historical and present day pulls (pseudo-$F$~(1,384)~ = 13.7, p < 0.001).
+However, time of data collection only accounted for 3.4% of the variation in community compositions ($R^2$ = 0.034).
+
+A density plot of the permutations calculated by the PERMANOVA visualize the rarity of getting our result based on 999 permutations of the data.
+
+```{r}
+fish.perms <- permustats(ado1)
+summary(fish.perms)
+
+  # statistic is observed statistic
+  # SES is standardized effect size of that statistic based on the mean and sd of permutation under null
+  # mean are means of permutations by column
+  # median medians of permutations
+  # upper is upper bound for 95% CI
+
+densityplot(fish.perms)
+```
+
+# Results.
+
+```{r}
+# Creating a vector of means for each fish species by historic or present dataset.
+fish.means <- aggregate(fish[,-c(1:2)], FUN = mean,
+                        by = list(fish$Data.Set))
+
+# Tidying the data into long format.
+means.long <- fish.means |>
+  gather(key = "Species", value = "Mean", 2:8,
+         factor_key = TRUE)
+#means.long
+
+colnames(means.long) <- c("Dataset", "Species", "Mean")
+```
+
+```{r}
+# Setting up color palette.
+pal1 <- PNWColors::pnw_palette("Sailboat", 7, type = "continuous")
+
+# Stacked bar plot to visualize differences in composition
+fp <- means.long |>
+  ggplot(aes(x = Dataset, y = Mean, fill = Species)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  scale_fill_manual(values = pal1) +
+  ggtitle("Fish Community Composition in Chesapeake Bay: Historic vs Present") +
+  ylab("Mean Fish Count")
+fp
+```
+
+# Conclusion.
+
+Fish community composition in Chesapeake Bay is significantly different in the present compared to historic levels (pseudo-$F$~(1,384)~ = 13.7, p < 0.001).
+
+However, there are very likely other factors contributing to this difference, as time only accounted for 3.4% of the variation between groups ($R^2$ = 0.034).
+
+This isn't terribly surprising, as the data are a subset of a much larger dataframe that includes many other variables that might explain more variation.
+
+# Reflection.
+
+Running the PERMANOVA and interpreting the results felt fairly straightforward for this assignment. Going through Euclidean, standardized Euclidean, and Bray-Curtis measurements sequentially really helped show how different measures give different representations of the data.
+
+My apologies for not getting the draft version in this week. It has been a tough one inside and outside of school.
