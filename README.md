@@ -5,20 +5,15 @@
 Work related to the Data Science for Environmental Applications certificate program through WWU. All work was completed using Rstudio, primarily with packages within the `tidyverse` group of libraries. Use the links here to see the Rmarkdown output for the various projects completed during this program.
 
 ## Table of Contents
-* [Statistics Coursework](#statistics-coursework):
-  * [Applied Statistics for Environmental Applications](#applied-statistics)
-  * [Multivariate Statistics](#multivariate-statistics)
-  * [Spatial Analysis](#spatial-analysis)
-
 * [Data Science Seminars](#data-science-seminars):
   * [Data Visualization](#data-visualization)
   * [Machine Learning](#machine-learning)
   * [ShinyApp Development](#shinyapp-development)
 
-## Statistics Coursework
-### Applied Statistics for Environmental Applications
-
-* 
+* [Statistics Coursework](#statistics-coursework):
+  * [Applied Statistics in Environmental Science](#applied-statistics-in-environmental-science)
+  * [Multivariate Statistics](#multivariate-statistics)
+  * [Spatial Analysis](#spatial-analysis)
 
 ## Data Science Seminars
 ### Data Visualization
@@ -40,6 +35,18 @@ This seminar focused on different aspects of good data visualization practices. 
 * Decision Trees: [rpubs.com/lukeghallahorne/ml_decisiontrees](https://rpubs.com/lukeghallahorne/ml_decisiontrees)
 * Neural Networks: [rpubs.com/lukeghallahorne/ml_neuralnetworks](https://rpubs.com/lukeghallahorne/ml_neuralnetworks)
 * Improving Model Learning: [rpubs.com/lukeghallahorne/ml_modellearning](https://rpubs.com/lukeghallahorne/ml_modellearning)
+
+## Statistics Coursework
+### Applied Statistics in Environmental Science
+
+* Tidy Data: [rpubs.com/lukeghallahorne/esci502_tidydata](https://rpubs.com/lukeghallahorne/esci502_tidydata)
+* Linear Models: [rpubs.com/lukeghallahorne/esci502_lm](https://rpubs.com/lukeghallahorne/esci502_lm)
+* ANOVA: [rpubs.com/lukeghallahorne/esci502_anova](https://rpubs.com/lukeghallahorne/esci502_anova)
+* Multiple Regression: [rpubs.com/lukeghallahorne/esci502_mr](https://rpubs.com/lukeghallahorne/esci502_mr)
+* Plotting Multiple Regressions: [rpubs.com/lukeghallahorne/esci502_mrplots](https://rpubs.com/lukeghallahorne/esci502_mrplots)
+* Generalized Linear Models (GLMs): [rpubs.com/lukeghallahorne/esci502_glm](https://rpubs.com/lukeghallahorne/esci502_glm)
+* Final Synthesis: [rpubs.com/lukeghallahorne/esci502_final](https://rpubs.com/lukeghallahorne/esci502_final)
+
 
 ### ShinyApp Development
 
