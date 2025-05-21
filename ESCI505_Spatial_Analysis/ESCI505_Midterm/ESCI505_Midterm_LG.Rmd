@@ -1,0 +1,611 @@
+---
+title: "ESCI 505 Midterm"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, message = FALSE, error=FALSE}
+library(tidyverse)
+library(sf)
+library(tmap)
+library(spatstat)
+library(gstat)
+library(terra)
+library(ggpubr)
+library(ncf)
+```
+
+```{r include = FALSE, eval = FALSE}
+# unused/ attempt library
+library(stars)
+library(lidaRtRee)
+
+library(raster)
+library(maps)
+
+library(sp)
+```
+
+# 1. PNW Map
+
+## 1.1 Map Precipitation
+
+```{r include = FALSE, eval = FALSE}
+#?maps
+#map_data(maps::state(c("WA", "OR", "ID")))
+
+pnw <- map_data("state")
+pnw_bord <- subset(pnw, pnw$region == c("washington", "oregon", "idaho"))
+pnw_bord$group <- as.factor(pnw_bord$group)
+str(pnw_bord)
+
+pnw_bord_sf <- st_as_sf(pnw_bord, coords = c("long", "lat"), crs = 4326)
+pnw_bord_sf
+
+pnw_bord_poly <- pnw_bord_sf |>
+  group_by(group) |>
+  summarise() |
+  st_cast("POLYGON")
+
+polys <- st_sf(
+  aggregate(
+    pnw_bord_sf,
+    list(pnw_bord_sf$group),
+    function(g){
+      st_cast(st_combine(g), "MULTIPOLYGON"
+              )
+    }
+  )
+)
+
+# pnw_borders <- getData(name = "GADM", country = "US", download = TRUE, level = 2)
+```
+
+
+```{r}
+# read and view data
+pnw_df <- readRDS("data/pnw_norms.rds")
+# head(pnw_df)
+
+# save as sf
+pnw_sf <- st_as_sf(pnw_df, coords = c("longitude", "latitude"), crs = 4326, agr = "aggregate")
+# pnw_sf
+# st_crs(pnw_sf)
+
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = pnw_sf, aes(fill = prcp, size = prcp),
+          shape = 21, alpha = 0.75) +
+  scale_fill_continuous(type = "viridis") +
+  guides(size = "none") +
+  labs(fill = "Precipitation 
+       (inches)", x = "Longitude", y = "Latitude",
+       title = "Total Annual Precipitation in WA, OR, and ID",
+       subtitle = "(1991 - 2020 Normal)")
+
+```
+
+Figure 1.1. Map of total annual precipitation across Washington, Oregon, and Idaho. Values are normal averages from 1991 to 2020. Color and size indicate amount of precipitation (in inches). Source: NOAA GHCN
+
+Precipitation is highest along the Western coast of Washington and Oregon, with a dramatic shift to low precipitation at ~ 122 deg W.
+
+## 1.2 Map Temperature
+
+```{r}
+tmap_mode('view')
+tm_shape(pnw_sf) +
+  tm_dots(col = "tavg", palette = "viridis",
+          id = "name")
+```
+
+Figure 1.2. Interactive map of annual average temperature across Washington, Oregon, and Idaho. Values are climate normals from 1991 to 2020. Color indicates temperature (degrees Fahrenheit). Source: NOAA GHCN
+
+Average temperature follows a similar pattern to precipitation, though with a less dramatic gradient in the mountainous region of Washington and Oregon.  The lowest average temperatures are in Southeast Idaho as well as a few location scattered along the Eastern edge of the mountains. Temperature appears to be on a broader gradient than precipitation in the Pacific Northwest. 
+
+# 2. Point Pattern Analysis
+
+These data show tree locations of three co-dominant species in an experimental forest in central Michigan. The three tree types - black oak, hickory, and maple - have differing drought tolerances (low, medium, and high tolerance, respectively). A neutral model for the site is the expectation of clustering by species, and repulsion or attraction to other species depending on their relative drought tolerances.
+
+Source: Diggle (1983).
+
+## 2.1 Analyze
+
+```{r include = FALSE, eval = FALSE}
+wood <- readRDS("data/hardwood_ppp.rds")
+summary(wood)
+plot(density(wood))
+plot(wood, chars=c(16,1,2), cex=0.6, leg.args=list(cex=1.1))
+
+wood.df <- as.data.frame(wood)
+head(wood.df)
+
+oak <- subset(wood, marks == "blackoak", drop = TRUE)
+maple <- subset(wood, marks == "maple", drop = TRUE)
+hickory <- subset(wood, marks == "hickory", drop = TRUE)
+
+
+```
+
+```{r}
+wood <- readRDS("data/hardwood_ppp.rds")
+wood.df <- as.data.frame(wood)
+
+oak <- subset(wood, marks == "blackoak", drop = TRUE)
+maple <- subset(wood, marks == "maple", drop = TRUE)
+hickory <- subset(wood, marks == "hickory", drop = TRUE)
+```
+
+
+### Density Plots {.tabset}
+
+```{r}
+ggplot() +
+  geom_point(data = wood.df, aes(x = x, y = y, colour = marks)) +
+  labs(x = "Easting (ft)", y = "Northing (ft)",
+       title = "Hardwood Forest", colour = "Tree Species")
+```
+
+Figure 2.1: Map of trees (black oak, hickory, and maple) in a central Michigan forest. Color indicates species.
+
+Visually, it appears that maple is repelled from both black oak and hickory trees, with maples concentrated in the south and hickory and black oak focused in the northeastern and northwestern corners. Hickory and black oak themselves appear to overlap fairly randomly.
+
+#### All Hardwoods
+
+```{r fig.asp =1}
+plot(density(wood), main = "Hardwood Density")
+```
+
+#### Black Oak x Maple
+```{r fig.asp =1}
+plot(density(oak), main = "Black Oak (density) x Maple (points)")
+points(maple, pch = 20)
+```
+
+#### Black Oak x Hickory
+```{r fig.asp =1}
+plot(density(hickory), main = "Hickory (density) x Black Oak (points)")
+points(oak, pch = 20)
+```
+
+#### Maple x Hickory
+```{r fig.asp =1}
+plot(density(maple), main = "Maple (density) x Hickory (points)")
+points(hickory, pch = 20)
+```
+
+
+
+```{r include = FALSE, eval = FALSE}
+woodK <- envelope(wood, Kest, nsim = 100, verbose = FALSE)
+plot(woodK)
+```
+
+```{r include = FALSE, eval = FALSE}
+woodL <- envelope(wood, Lest, nsim = 100, verbose = FALSE)
+plot(woodL)
+```
+
+### {.unlisted .unnumbered}
+
+The crossed density plots above show that both black oak and hickory appear to be repelled from maple trees, but not from each other. Maple density is particularly strongest where black oaks and hickories are least dense or absent. Furthermore, black oak and hickory look like they cluster together. This follows from our original hypothesis, since black oaks and maples are on opposite ends of drought tolerance. While we might have expected hickory to be somewhere in between, preliminary looks suggest that hickory is equally repelled from locations with maples.
+
+### Ripley's K {.tabset}
+
+I performed a point pattern analysis of the hardwood forest using Ripley's K. First, I examined all three species together, then each species separately, and finally, the pairwise crosses of species.
+
+#### All Hardwoods
+```{r}
+woodK <- envelope(wood, Kest, nsim = 100, verbose = FALSE)
+
+ggplot(woodK, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "All Hardwoods",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+#### Black Oak
+```{r}
+oakK <- envelope(oak, Kest, nsim = 100, verbose = FALSE)
+
+ggplot(oakK, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Black Oak",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+#### Maple
+```{r}
+mapleK <- envelope(maple, Kest, nsim = 100, verbose = FALSE)
+
+ggplot(mapleK, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Maple",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+#### Hickory
+```{r}
+hickoryK <- envelope(hickory, Kest, nsim = 100, verbose = FALSE)
+
+ggplot(hickoryK, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Hickory",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+### {.unlisted .unnumbered .tabset}
+
+#### Black Oak x Maple
+```{r}
+cross_oak_maple <- envelope(wood, "Kcross", i="blackoak", j = "maple", verbose=FALSE)
+
+ggplot(cross_oak_maple, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Black Oak - Maple Cross",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+#### Black Oak x Hickory
+```{r}
+cross_oak_hickory <- envelope(wood, "Kcross", i="blackoak", j = "hickory", verbose=FALSE)
+
+ggplot(cross_oak_hickory, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Black Oak - Hickory Cross",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+#### Hickory x Maple
+```{r}
+cross_maple_hickory <- envelope(wood, "Kcross", i="maple", j = "hickory", verbose=FALSE)
+
+ggplot(cross_maple_hickory, mapping = aes(x=r, ymin = lo-pi*r^2, ymax=hi-pi*r^2)) +
+  geom_ribbon(fill="grey",alpha=0.5) + 
+  geom_line(mapping = aes(y=theo-pi*r^2),col="red", linetype="dashed") +
+  geom_line(mapping = aes(y=obs-pi*r^2)) +
+  labs(y=expression(K(r) - pi~r^2), x = "r") +
+  scale_x_continuous(expand = c(0,0)) +
+  labs(title = "Maple - Hickory Cross",
+    subtitle = expression("Ripley's"~K~-~pi~r^2))
+```
+
+### {.unlisted .unnumbered}
+There is evidence of clustering among all trees between ~25m and ~175m. Furthermore, for all three tree species, trees were grouped closer at all distances. This is shown by the observed values of Ripley's K being far above the theoretical expectation across tested distances.
+
+Black oak and maple show strong dispersion from one another across all distances (observed Ripley's K below the theoretical values). The same pattern can be seen between maple and hickory trees. Black oak and hickory, however, show strong clustering at all distances past ~25m. 
+
+## 2.2 Interpret
+All three tree species - black oak, maple, and hickory - group significantly within species in point pattern analysis using Ripley's K. This follows from our initial expectations, that trees would be more likely to group around conspecifics. This tracks ecologically, since saplings would be more likely to be found in an area with adults, so groupings slowly develop.
+
+The pairwise crosses of trees show that maples - with the highest drought tolerance of the three trees - are repelled from both black oaks and hickories. This suggests that regions of the forest where maples are found might have a lower soil moisture content than areas where hickory and black oak are more prevalent. Based on the map, the southern-central region of the forest would potentially have drier soil than the northwestern and northeastern corners. Furthermore, black oak and hickory, rather than being in complete spatial randomness to one another, are significantly grouped together. Hickories have a medium drought tolerance, and black oak have the lowest. Soil moisture does not appear to have a strong enough gradient in this forest to separate hickories and black oaks. Furthermore, there appears to be other conditions occurring with these two species that draws them together. More data on this area - such as topography or sources of water - would help elucidate this separation between tree species.
+
+# 3. Variograms and Anisotropy
+
+## 3.1 Isotropic Variogram
+```{r}
+smoke <- readRDS("data/pm_observations.rds")
+# smoke
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = smoke, aes(fill = pm, size = pm),
+          shape = 21, alpha = 0.75) +
+  scale_fill_continuous(type = "viridis") +
+  guides(size = "none") +
+  labs(x = "Easting (m)", y = "Northing (m)",
+       title = "Particulate Matter for 100 sq km Site",
+       subtitle = "pm: unitless")
+```
+Figure 3.1: Particulate matter (smoke indicator) across a 
+
+
+```{r}
+# isotropic variogram
+smokeVar <- variogram(pm~1, smoke, cloud = FALSE)
+plot(smokeVar, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (m)",
+     main = "Particulate Matter (unitless)")
+```
+
+The data do appear autocorrelated at short distances (less than 1000 meters), shown by the roughly linear increase in semivariance from 0 to 1000 meters. This means that within 1000m, particulate matter measurements are likely to be similar to one another. At distances beyond that, the semivariance levels out to an asymptote, implying that there is not a strong gradient in particulate matter in the extent of the data.
+
+## 3.2 Anisotropic Variogram
+
+```{r}
+smokeVar2 <- variogram(pm~1, smoke, cloud = FALSE, 
+                      alpha = c(0, 45, 90, 135))
+plot(smokeVar2, pch = 20, cex = 1.5, col = "black",
+     ylab = expression(Semivariance~(gamma)),
+     xlab = "Distance (m)",
+     main = "Particulate Matter (unitless)")
+```
+
+The anisotropic variogram alters my impression that there is no strong gradient in particulate matter. In all directions but southwest to northeast (45 degrees), there is little to no autocorrelation in particulate matter even at short distances. Only in the SW to NE direction is there a linear trend in semivariance, and then just at distances below 1000m. This implies that there is a gradient in PM from SW to NE, but trends in PM span distances only up to one-tenth of the extent. This can be seen somewhat in the map with small clusters of higher pm along the western half of the plot.
+
+All of this suggests that smoke has detectable density differences within 1km and is traveling along a SW to NE path. It also suggests multiple sources of the smoke, since autocorrelation levels out beyond 1km. I suspect that, in this instance, there were multiple sources of smoke, each of which had a tendency to spread toward the NE from its origin. This would account for the near-distance autocorrelation and the anisotropy in the particulate matter data.
+
+# 4. Moran's I and Scale
+
+Sites:
+HARV_037 - evergreen (white pine and Eastern hemlock)
+HARV_043 - evergreen
+
+HARV_046 - deciduous (red oak and red maple)
+HARV_047 - deciduous
+
+
+## 4.1 Map
+
+```{r}
+harv <- readRDS("data/harvSubsetCHM.rds")
+# harv
+
+
+harv_037 <- st_as_sf(subset(harv, plotID == "HARV_037", drop = TRUE))
+# harv_037
+
+# harv_037_rast <- st_rasterize(harv_037 |> dplyr::select(chm, geometry))
+# harv_037_rast
+# write_stars(harv_037_rast, "harv_037_rast.tif")
+
+
+
+# harv_037_r2 <- rast("harv_037_rast.tif")
+# harv_037_r2
+# harv_037_r2_df <- as.data.frame(harv_037_r2, xy = TRUE)
+
+
+harv_043 <- st_as_sf(subset(harv, plotID == "HARV_043", drop = TRUE))
+harv_046 <- st_as_sf(subset(harv, plotID == "HARV_046", drop = TRUE))
+harv_047 <- st_as_sf(subset(harv, plotID == "HARV_047", drop = TRUE))
+
+chm_harv <- rast("data/HARV_chmCrop.tif")
+chm_harv_df <- as.data.frame(chm_harv, xy = TRUE)
+
+# chm_harv_df
+# str(harv_037_r2_df)
+
+chm_harv_037_crop <- crop(x = chm_harv, y = harv_037)
+chm_harv_037_df <- as.data.frame(chm_harv_037_crop, xy = TRUE)
+
+chm_harv_043_crop <- crop(x = chm_harv, y = harv_043)
+chm_harv_043_df <- as.data.frame(chm_harv_043_crop, xy = TRUE)
+
+chm_harv_046_crop <- crop(x = chm_harv, y = harv_046)
+chm_harv_046_df <- as.data.frame(chm_harv_046_crop, xy = TRUE)
+
+chm_harv_047_crop <- crop(x = chm_harv, y = harv_047)
+chm_harv_047_df <- as.data.frame(chm_harv_047_crop, xy = TRUE)
+
+```
+
+```{r}
+# HARV_037
+p037a <- ggplot() +
+  geom_sf(data = harv_037, aes(fill = chm, size = chm),
+          pch = 21, alpha = 0.75) +
+  scale_size(range = c(1,4)) +
+  guides(size = "none") +
+  labs(x = "Longitude", y = "Latitude", fill = "CHM",
+       title = "HARV_037") +
+  scale_fill_continuous(type = "viridis")
+
+
+p037b <- ggplot() +
+  geom_raster(data = chm_harv_037_df, aes(x = x, y = y, fill = HARV_chmCrop)) +
+  coord_cartesian() +
+  labs(x = "Easting", y = "Northing", fill = "CHM",
+       title = "HARV_037") +
+  scale_fill_continuous(type = "viridis")
+
+# HARV_043
+p043a <- ggplot() +
+  geom_sf(data = harv_043, aes(fill = chm, size = chm),
+          pch = 21, alpha = 0.75) +
+  scale_size(range = c(1,4)) +
+  guides(size = "none") +
+  labs(x = "Longitude", y = "Latitude", fill = "CHM",
+       title = "HARV_043") +
+  scale_fill_continuous(type = "viridis")
+
+p043b <- ggplot() +
+  geom_raster(data = chm_harv_043_df, aes(x = x, y = y, fill = HARV_chmCrop)) +
+  coord_cartesian() +
+  labs(x = "Easting", y = "Northing", fill = "CHM",
+       title = "HARV_043") +
+  scale_fill_continuous(type = "viridis")
+
+# HARV_046
+p046a <- ggplot() +
+  geom_sf(data = harv_046, aes(fill = chm, size = chm),
+          pch = 21, alpha = 0.75) +
+  scale_size(range = c(1,4)) +
+  guides(size = "none") +
+  labs(x = "Longitude", y = "Latitude", fill = "CHM",
+       title = "HARV_046") +
+  scale_fill_continuous(type = "viridis")
+
+p046b <- ggplot() +
+  geom_raster(data = chm_harv_046_df, aes(x = x, y = y, fill = HARV_chmCrop)) +
+  coord_cartesian() +
+  labs(x = "Easting", y = "Northing", fill = "CHM",
+       title = "HARV_046") +
+  scale_fill_continuous(type = "viridis")
+
+# HARV_047
+p047a <- ggplot() +
+  geom_sf(data = harv_047, aes(fill = chm, size = chm),
+          pch = 21, alpha = 0.75) +
+  scale_size(range = c(1,4)) +
+  guides(size = "none") +
+  labs(x = "Longitude", y = "Latitude", fill = "CHM",
+       title = "HARV_047") +
+  scale_fill_continuous(type = "viridis")
+
+p047b <- ggplot() +
+  geom_raster(data = chm_harv_047_df, aes(x = x, y = y, fill = HARV_chmCrop)) +
+  coord_cartesian() +
+  labs(x = "Easting", y = "Northing", fill = "CHM",
+       title = "HARV_047") +
+  scale_fill_continuous(type = "viridis")
+
+```
+
+```{r}
+p_rast <- ggarrange(p037b, p043b, p046b, p047b)
+p_rast
+```
+
+Figure 4.1: Canopy height measurements (CHM) for trees within 4 sample sites: HARV_037, HARV_043, HARV_046, and HARV_047. Color indicates canopy height. Extent corners go beyond the sample site extent (40m radius from centroid).
+
+```{r}
+p_points <- ggarrange(p037a, p043a, p046a, p047a)
+p_points
+```
+
+Figure 4.2: Canopy height measurements (CHM, as points) for trees within 4 sample sites: HARV_037, HARV_043, HARV_046, and HARV_047. Color indicates canopy height. True extent of the sample sites are shown.
+
+## 4.2 Moran's I
+
+```{r}
+# HARV_037
+harv_037_x <- st_coordinates(harv_037)[,1]
+harv_037_y <- st_coordinates(harv_037)[,2]
+harv_037_chm <- harv_037$chm
+harv_037_d <- dist(cbind(harv_037_x, harv_037_y))
+
+harv_037_I <- spline.correlog(x = harv_037_x, y = harv_037_y, z = harv_037_chm,
+                  resamp = 100, quiet = TRUE)
+
+# HARV_043
+harv_043_x <- st_coordinates(harv_043)[,1]
+harv_043_y <- st_coordinates(harv_043)[,2]
+harv_043_chm <- harv_043$chm
+harv_043_d <- dist(cbind(harv_043_x, harv_043_y))
+
+harv_043_I <- spline.correlog(x = harv_043_x, y = harv_043_y, z = harv_043_chm,
+                  resamp = 100, quiet = TRUE)
+
+# HARV_046
+harv_046_x <- st_coordinates(harv_046)[,1]
+harv_046_y <- st_coordinates(harv_046)[,2]
+harv_046_chm <- harv_046$chm
+harv_046_d <- dist(cbind(harv_046_x, harv_046_y))
+
+# max(harv_046_d)/3
+
+harv_046_I <- spline.correlog(x = harv_046_x, y = harv_046_y, z = harv_046_chm,
+                  resamp = 100, quiet = TRUE)
+
+# HARV_047
+harv_047_x <- st_coordinates(harv_047)[,1]
+harv_047_y <- st_coordinates(harv_047)[,2]
+harv_047_chm <- harv_047$chm
+harv_047_d <- dist(cbind(harv_047_x, harv_047_y))
+
+# max(harv_047_d)/3
+
+harv_047_I <- spline.correlog(x = harv_047_x, y = harv_047_y, z = harv_047_chm,
+                  resamp = 100, quiet = TRUE)
+```
+
+### Correlograms {.tabset}
+
+#### HARV_037
+```{r}
+# HARV_037
+# max(harv_037_d)/3
+plot(harv_037_I, xlim = c(0,25),
+     main = "HARV_037")
+abline(h = 0, lty = "dashed")
+```
+
+#### HARV_043
+```{r}
+# HARV_043
+# max(harv_043_d)/3
+plot(harv_043_I, xlim = c(0,25),
+     main = "HARV_043")
+abline(h = 0, lty = "dashed")
+```
+
+#### HARV_046
+```{r}
+# HARV_046
+# max(harv_046_d)/3
+plot(harv_046_I, xlim = c(0,25),
+     main = "HARV_046")
+abline(h = 0, lty = "dashed")
+```
+
+#### HARV_047
+```{r}
+# HARV_047
+# max(harv_047_d)/3
+plot(harv_047_I, xlim = c(0,25),
+     main = "HARV_047")
+abline(h = 0, lty = "dashed")
+```
+
+### {.unlisted .unnumbered}
+
+In plot HARV_037, correlation (Moran's I) is high at very short distances, then decreases sharply to a distance of 5m, then slowly levels off as distance increases. This suggests high autocorrelation of canopy height at short distances, and minimal autocorrelation beyond 5m. There is a noticeable change in slope of Moran's I between 5m and 10m distances, before it asymptotes to 0. There may be a slight gradient inherent in canopy height in site HARV_037, which is supported visually by the map: beneath the clusters of higher canopy, there appears to be a gradual increase in height from West to East in the site.
+
+In sample plot HARV_043, there is a similarly steep gradient in correlation (Moran's I) from 0m to 5m distance. This suggests that canopy height is autocorrelated closely at short distances, then quickly becomes uncorrelated beyond 5m. Moran's I asymptotes quickly after 5m distance, implying that there is little to no underlying gradient in canopy height across the sample site. The map supports this, with no blatantly apparent pattern in height across the site (there may be a slight gradient from the Southwest to the Northeast, but its significance is hard to assess visually).
+
+In the HARV_046 sample plot, very high autocorrelation (Moran's I) is seen at short distances, with the steepest slope between 0 and 5m followed by a very slow decline in correlation as distance increases. Not only does this show high spatial autocorrelation of canopy height across much larger distances than the previous sites, it further suggests that this site is anisotropic for canopy height and a gradient is present. The map of site HARV_046 has a clear pattern of increasing height from Southeast to Northwest.
+
+Site HARV_047 has the most dramatic sign of a gradient in canopy height across the sample plot. Correlation is very high - nearly 1 - at short distances and decreases at a markedly shallow slope as distance increases. There is no apparent shift in slope at ~5m, as was seen in the three other sites. These together suggest that HARV_047 has the strongest gradient in canopy height. This is supported by the map, which has a very apparent gradient from Southeast to Northwest.
+
+## 4.3 Scaling
+There are two general trends of spatial autocorrelation in these four forest plots. Both sites dominated by evergreen trees - HARV_037 and HARV_043 - show strong autocorrelation in canopy height at short distances that trail off along some minor gradient. Those sites with deciduous trees - HARV_046 and HARV_047 - have higher autocorrelation of canopy height across vaster distances, with a clearer gradient across the plots as a whole.
+
+Very generally, evergreen trees will be more crown-shaped and have narrower peaks than the broader, umbrella-shaped deciduous trees. Of our sites, the evergreen-dominated plots primarily consist of White pine (*Pinus strobus*) and Eastern hemlock (*Tsuga canadensis*). The mainly deciduous sites are dominated by Red oak (*Quercus rubra*) and Red maple (*Acer rubrum*). Research on Harvard Forest canopy height estimated *P. strobus* and *T. canadensis* height to be larger but crown radius, and crown depth to be lower than *Q. rubra* or *A. rubrum* (Sullivan et al. 2017). This shows why scale of autocorrelation is dependent upon the morphology of the tree community in the site. Broader leaves of deciduous trees will blend the canopy to a more uniform height on average. This leads to larger scale trends as well as clearer representation of underlying soil, moisture, or topography gradients that may be affecting canopy height. We can see these larger-scale patterns in the plots for HARV_046 and HARV_047. The narrower but taller canopies of evergreen trees would create smaller, more distinct points of tall canopy from individual or small clusters of trees, with gaps in the canopy between groups. Hence, we see autocorrelation on a much smaller scale than with deciduous-dominated sites, where the near-distance clusters can overpower any underlying gradients (compare HARV_037, where a stronger gradient is visible, to HARV_047, with high autocorrelation at short distances but little evidence of a gradient). 
+
+Sources:
+Diggle, P. 1983. Statistical Analysis of Spatial Point Patterns. Mathematics in biology, Academic Press.
+
+Sullivan, F. B., M. J. Ducey, D. A. Orwig, B. Cook, and M. W. Palace. 2017. Comparison of lidar- and allometry-derived canopy height models in an eastern deciduous forest. Forest Ecology and Management. **406**:83 – 94. URL: http://www.sciencedirect.com/science/article/pii/S0378112717312057.
+

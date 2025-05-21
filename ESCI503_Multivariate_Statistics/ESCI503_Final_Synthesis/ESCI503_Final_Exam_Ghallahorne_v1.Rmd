@@ -1,0 +1,853 @@
+---
+title: "Final Exam Workflow"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library
+
+```{r warning = FALSE, message=FALSE}
+library(tidyverse)
+# sapply()
+library(kableExtra)
+# kbl()
+library(GGally)
+# ggpairs()
+library(corrplot)
+# corrplot()
+library(PNWColors)
+# pnw_palette()
+library(biotools)
+# boxM()
+library(vegan)
+# vegdist()
+library(ape)
+# pcoa()
+library(dendextend)
+```
+
+# Palettes
+
+```{r}
+names(pnw_palettes)
+```
+```{r}
+pal1 <- pnw_palette("Starfish", n = 2)
+pal1
+pal2 <- pnw_palette("Starfish", n = 3)
+pal2
+```
+
+
+# Workflow
+
+Visualize Data
+
+- structure & summary statistics //
+    - mean, standard deviation//
+- distribution //
+    - ggpairs: response variables, environmental variables //
+    - multivariate normality? //
+    - equal variance? -> Box's M
+- corrplot
+    - correlation appropriate for multivariate analysis?
+- standardization necessary? 
+    - depends on question and spread of data
+
+Ordination
+**Normal**
+
+- PCA
+
+**Non-Normal**
+
+- PCoA or nMDS
+
+# Visualize Data
+
+## Loading Data
+```{r}
+# Loading abundance data and environmental variables
+fungi <- read.csv("Data/fungi.csv")
+fungi.env <- read.csv("Data/fungiEnv.csv", stringsAsFactors = TRUE)
+```
+
+## Structure and Summary Statistics
+
+```{r}
+# Structure of abundance data
+str(fungi)
+# Summary statistics of abundance data (min, mean, max, quartiles)
+summary(fungi)
+# Standard deviation
+sapply(fungi[,-1], FUN = sd)
+# Maxima
+sapply(fungi[,-1], FUN = max)
+# Means
+sapply(fungi[,-1], FUN = mean)
+min(sapply(fungi[,-1], FUN = max))
+max(sapply(fungi[,-1], FUN = mean))
+
+
+# Presentation table of summary statistics
+Taxa <- t(colnames(fungi[,-1]))
+Min <- t(sapply(fungi[,-1], FUN = min))
+Mean <- t(sapply(fungi[,-1], FUN = mean))
+Max <- t(sapply(fungi[,-1], FUN = max))
+SD <- t(sapply(fungi[,-1], FUN = sd))
+
+fungi.summ <- rbind.data.frame(Min,
+                               Mean,
+                               Max,
+                               SD)
+colnames(fungi.summ) <- Taxa
+rownames(fungi.summ) <- c("Min", "Mean", "Max", "SD")
+fungi.summ
+
+kbl(fungi.summ, digits = 2) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+Arbuscular mycorrhizal (AM) fungi data include sequence abundance for 51 virtual taxa from 32 knapweed plants. Most taxa are absent in at least one knapweed plant, except for five ubiquitous taxa (VT108, VT113, VT143, VT193, and VT195). Maximum counts vary across multiple orders of magnitude, with the lowest (VT283 and VT409) at only 2 and the highest (VT281) at 677. Mean abundances vary similarly, from 0.09 (VT 283 and VT409) to 214.59 (VT281).
+
+```{r}
+# Structure of environmental/explanatory variables
+str(fungi.env)
+# Summary statistics of environmental variables
+summary(fungi.env)
+```
+
+Explanatory variables include two categorical variables - soil treatment (dry or wet) and seed population of origin - as well as three continuous variables - shoot, root, and total biomass, measured in grams. Soil treatments are even groups of 16 plants each. Plants included 9 from the jumbo population, 7 from mpg, 8 from portal, and 8 from sandy. 
+
+## Variables
+
+Explanatory Variables:
+
+- moist: wet or dry soil treatment
+- pop: plant population from which seed was sourced
+    - jumbo, mpg, portal, or sandy
+- shoot: dry weight of aboveground tissue (g)
+- root: dry weight of belowground tissue (g)
+- total: dry weight of whole plant (g)
+
+Response Variables:
+
+- sequence abundances for 51 AM fungi virtual taxa
+
+## Distributions {.tabset}
+
+### Fungi[,2:11]
+
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,2:11], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+### Fungi[,12:21]
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,12:21], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+### Fungi[,22:31]
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,22:31], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+### Fungi[,32:41]
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,32:41], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+### Fungi[,42:51]
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,42:51], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+### Explanatory Variables
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi.env[,-c(1:3)], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+
+### 
+Due to the number of response variables, I broke up the pairwise plots into groups of 10 to get a general idea of the distributions and correlations between taxa. Color indicates wet (purple) or dry (red) treatment.
+
+The response variables have highly non-normal distributions, skewing toward zeros and low values across taxa. A few pairwise plots have a roughly elliptical shape but the majority show strong tendencies toward zeroes. This is unsurprising given the nature of the response data as virtual taxa abundances. 
+
+The three continuous explanatory variables - shoot, root, and total biomass (g) - are roughly normally distributed in wet and dry treatment groups, as seen by the bell-shaped distribution curves and the roughly elliptical patterns of points in the pairwise plots. Root and shoot biomass are moderately correlated; both are strongly correlated with total biomass since it is a combination of the two.
+
+## Correlation
+
+```{r}
+M <- cor(fungi[,-1])
+corrplot(M, tl.cex = 0.5)
+
+cor.test(fungi$VT416, fungi$VT005)
+cor.test(fungi$VT113, fungi$VT115)
+cor.test(fungi$VT057, fungi$VT340)
+```
+
+Correlation between AM fungi taxa varies from near zero for many pairs to very high correlation. Many pairs are moderately correlated, justifying the use of multivariate methods to assess differences in AM fungi communities. 
+
+Three pairs of taxa are very highly correlated: VT416 and VT005 (r = 0.95, t~30~ = 17.4, p < 0.001), VT113 and VT115 (r = 0.94, t~30~ = 15.3, p < 0.001), and VT057 and VT340 (r = 0.91, t~30~ = 12.2, p < 0.001). 
+
+## Box's M
+
+```{r include = FALSE, eval=FALSE}
+moist <- fungi.env$moist
+fungi.box <- data.frame(moist, fungi[,-1])
+fungi.box
+str(fungi.box)
+fungi.BoxsM <- boxM(data = fungi.box[,-52],
+            group = fungi.box$moist)
+fungi.BoxsM
+```
+
+Because the number of observations (n = 32, i.e., knapweed plants) is less than the number of variables (p = 51, i.e., AM fungi virtual taxa), a Box's M test for homogeneity of covariance matrices was unsuccessful.
+
+Since these data are not multivariate normally distributed, they do not satisfy the assumptions of analyses like Principle Components Analysis (PCA) or Multivariate Analysis of Variance (MANOVA). As such, equal variance in response variables among explanatory variables (i.e., dry and wet soil treatments) is not a prerequisite for other analyses like PCoA, nMDS, and PERMANOVA.
+
+# Ordination
+## Choosing Ordination Method
+
+As the data do not satisfy the assumption of normality, a Principle Component Analysis (PCA) was inappropriate for these data.
+
+Both Principle Coordinates Analysis (PCoA) and non-metric Multidimensional Scaling (nMDS) rely on distance/dissimilarity matrices to construct ordination axes. I chose Bray-Curtis dissimilarity measures over Euclidean or standardized Euclidean measures because Bray-Curtis better accounts for repeating zeros often seen in community abundance data such as the AM fungi data. 
+
+### PCoA
+
+```{r}
+# response variable matrix
+Y <- as.matrix(fungi[,-1])
+# Distance/dissimilarity matrix with Bray-Curtis distances
+fungi.dist <- vegdist(Y, method = "bray")
+# PCoA on distance/dissimilarity matrix
+fungi.pcoa <- pcoa(fungi.dist)
+# Extract EigVals, relative EigVals, and relative corrected EigVals
+fungi.pcoa$values[,1:3]
+plot(fungi.pcoa$values[,3], type = "b")
+plot(fungi.pcoa$vectors[,1], fungi.pcoa$vectors[,2], col = fungi.env$moist)
+```
+
+PCoA explains 44% of variation in the first two axes (relative corrected eigenvalues, PCoA1 = 0.33, PCoA2 = 0.11). After the second axis, additional variation explained per axis decreases dramatically. Due to the diminishing returns on further axes, PCoA1 and PCoA2 are sufficient to explore the data.
+
+Preliminary plots of PCoA1 and PCoA2 showed a clear separation by soil treatment along PCoA1. 
+
+### nMDS
+
+I compared the PCoA with a non-metric Multidimensional Scaling (nMDS) ordination. NMDS is an iterative ordination that finds the lowest-stress solution through multiple random starts. I first ran the nMDS with 2 axes to compare to the first 2 PCoA axes. 
+
+```{r}
+set.seed(42)
+
+fungi.nmds.2D <- metaMDS(fungi[,-1], k = 2, distance = "bray",
+                      try = 40, trymax = 40)
+
+stressplot(fungi.nmds.2D)
+plot(fungi.nmds.2D$points[,1], fungi.nmds.2D$points[,2], col = fungi.env$moist)
+```
+
+Non-metric fit of the nMDS was rather high ($R^2$ = 0.953) but no repeated solution with stress below 0.2 was found with 40 random starts. Preliminary plots showed a similar separation of wet and dry treatment groups along nMDS1, but it was less dramatic than the separation on PCoA1. 
+
+I expanded the nMDS to include 3 axes to see if a more stable solution could be found with additional variaton.
+
+```{r}
+set.seed(42)
+
+fungi.nmds.3D <- metaMDS(fungi[,-1], k = 3, distance = "bray",
+                      try = 40, trymax = 40)
+fungi.nmds.3D
+stressplot(fungi.nmds.3D)
+plot(fungi.nmds.3D$points[,1], fungi.nmds.3D$points[,2], col = fungi.env$moist)
+plot(fungi.nmds.3D$points[,1], fungi.nmds.3D$points[,3], col = fungi.env$moist)
+plot(fungi.nmds.3D$points[,3], fungi.nmds.3D$points[,2], col = fungi.env$moist)
+```
+
+Three axes resulted in a best solution with stress = 0.157 and non-metric $R^2$ = 0.975. NMDS1 continues to show separation between wet and dry treatments.
+
+## Clustering
+
+```{r}
+fungi.dist <- vegdist(fungi[,-1], method = "bray")
+fungi.hcl <- hclust(fungi.dist, "ward.D2")
+fungi.dend <- as.dendrogram(fungi.hcl)
+plot(fungi.dend)
+fungi.clust <- cutree(fungi.hcl, k = 3)
+
+fungi.dend <- fungi.dend |>
+  color_branches(k = 3, col = pal2) |>
+  color_labels(k = 3, col = pal2)
+
+plot(fungi.dend)
+```
+
+## Variable Fitting (PCoA)
+
+```{r}
+set.seed(42)
+
+pcoa.fit <- envfit(fungi.pcoa$vectors, 
+                   fungi.env[,-1],
+                   choices = c(1,2))
+pcoa.fit
+```
+
+```{r}
+# nMDS Scores and Clusters for Abundance Dataframe for Plotting
+fungiPlot <- data.frame(
+  PCOA1 <- fungi.pcoa$vectors[,1],
+  PCOA2 <- fungi.pcoa$vectors[,2],
+  Cluster <- as.factor(fungi.clust),
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("PCOA1", "PCOA2", "Cluster", "Soil")
+
+# Environmental Variables Dataframe for Plotting
+## Continuous Variables (vectors)
+vecPlot <- as.data.frame(scores(pcoa.fit,
+                                display = "vectors"))
+
+vecPlot <- cbind(vecPlot,
+                 Vname = rownames(vecPlot),
+                 Pvalues = pcoa.fit$vectors$pvals,
+                 R_squared = pcoa.fit$vectors$r)
+# Filter by significant p values
+vecPlotSig <- subset(vecPlot, Pvalues < 0.05)
+
+## Categorical Variables (centroids)
+centPlot <- as.data.frame(scores(pcoa.fit,
+                                 display = "factors"))
+centPlot <- cbind(centPlot,
+                 Factor_name = rownames(centPlot),
+                 Pvalues = pcoa.fit$factors$pvals,
+                 R_squared = pcoa.fit$factors$r)
+# Filter by significant p values
+centPlotSig <- subset(centPlot, Pvalues < 0.05)
+
+# Species Scores Dataframe for Plotting
+
+fungi.scores <- as.data.frame(wascores(fungi.pcoa$vectors, fungi[,-1]))
+
+```
+
+```{r}
+# Ordination Plot
+plot1 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  geom_text(data = fungi.scores, 
+            aes(x = Axis.1, y = Axis.2),
+            label = rownames(fungi.scores),
+            size = 2.5, color = "coral4") +
+  geom_text(data = vecPlot,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            color = "grey30",
+            size = 3, 
+            nudge_x = c(0.1, -0.05, 0, -0.1, 0, 0),
+            nudge_y = c(0, 0.05, 0.05, 0, -0.025, -0.025)) +
+  # add axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  # add centroids
+  geom_text(data = centPlot, 
+             aes(x = Axis.1, y = Axis.2, label = Factor_name))
+plot1
+
+```
+
+
+
+
+
+## Variable Fitting (NMDS)
+
+```{r}
+set.seed(42)
+
+my.fit <- envfit(fungi.nmds.3D, fungi.env[,-1], choices = c(1,2,3))
+my.fit
+```
+
+
+```{r}
+# nMDS Scores and Clusters for Abundance Dataframe for Plotting
+fungiPlot <- data.frame(
+  NMDS1 <- fungi.nmds.3D$points[,1],
+  NMDS2 <- fungi.nmds.3D$points[,2],
+  NMDS3 <- fungi.nmds.3D$points[,3],
+  Cluster <- as.factor(fungi.clust))
+colnames(fungiPlot) <- c("NMDS1", "NMDS2", "NMDS3", "Cluster")
+
+# Environmental Variables Dataframe for Plotting
+vecPlot <- as.data.frame(scores(my.fit,
+                                display = "vectors"))
+
+vecPlot <- cbind(vecPlot,
+                 Vname = rownames(vecPlot),
+                 Pvalues = my.fit$vectors$pvals,
+                 R_squared = my.fit$vectors$r)
+
+centPlot <- as.data.frame(scores(my.fit,
+                                 display = "factors"))
+centPlot <- cbind(centPlot,
+                 Factor_name = rownames(centPlot),
+                 Pvalues = my.fit$factors$pvals,
+                 R_squared = my.fit$factors$r)
+
+
+# Filter by significant p value (not necessary here but kept for reference)
+# vecPlot <- subset(vecPlot, Pvalues < 0.05)
+
+# Species Scores Dataframe for Plotting
+Species1 <- fungi.nmds.3D$species[,1]
+Species2 <- fungi.nmds.3D$species[,2]
+Species3 <- fungi.nmds.3D$species[,3]
+Names <- rownames(fungi.nmds.3D$species)
+speciesPlot <- data.frame(Species1, Species2, Names)
+
+plot.center <- fungiPlot |>
+  group_by(Cluster) |>
+  summarise(
+    Axis1.center = mean(NMDS1), 
+    Axis2.center = mean(NMDS2),
+    Axis3.center = mean(NMDS3)
+    )
+
+```
+
+```{r}
+# Ordination Plot
+plot1 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS1, y = NMDS2, color = Cluster), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS2") +
+  scale_color_manual(values = pal2) +
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = NMDS1,
+                   y = 0, yend = NMDS2),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  geom_text(data = speciesPlot,
+            aes(x = Species1, y = Species2,
+                label = Names),
+            size = 2.5, color = "coral4") +
+  geom_text(data = vecPlot,
+            aes(x = NMDS1, y = NMDS2,
+                label = Vname),
+            color = "grey30",
+            size = 3, 
+            nudge_x = c(0.1, -0.05, 0, -0.1, 0, 0),
+            nudge_y = c(0, 0.05, 0.05, 0, -0.025, -0.025)) +
+  # add axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  # add centroids
+  geom_text(data = centPlot, 
+             aes(x = NMDS1, y = NMDS2, label = Factor_name))
+plot1
+
+```
+
+```{r}
+# Ordination Plot
+plot2 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS1, y = NMDS3, color = Cluster), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS3") +
+  scale_color_manual(values = pal2) +
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = NMDS1,
+                   y = 0, yend = NMDS3),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  geom_text(data = speciesPlot,
+            aes(x = Species1, y = Species3,
+                label = Names),
+            size = 2.5, color = "coral4") +
+  geom_text(data = vecPlot,
+            aes(x = NMDS1, y = NMDS3,
+                label = Vname),
+            color = "grey30",
+            size = 3, 
+            nudge_x = c(0.1, -0.05, 0, -0.1, 0, 0),
+            nudge_y = c(0, 0.05, 0.05, 0, -0.025, -0.025)) +
+  # add axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  # add centroids
+  geom_text(data = centPlot, 
+             aes(x = NMDS1, y = NMDS3, label = Factor_name))
+plot2
+
+```
+
+```{r}
+# Ordination Plot
+plot3 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS2, y = NMDS3, color = Cluster), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS2") +
+  ylab("NMDS3") +
+  scale_color_manual(values = pal2) +
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = NMDS2,
+                   y = 0, yend = NMDS3),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  geom_text(data = speciesPlot,
+            aes(x = Species2, y = Species3,
+                label = Names),
+            size = 2.5, color = "coral4") +
+  geom_text(data = vecPlot,
+            aes(x = NMDS2, y = NMDS3,
+                label = Vname),
+            color = "grey30",
+            size = 3, 
+            nudge_x = c(0.1, -0.05, 0, -0.1, 0, 0),
+            nudge_y = c(0, 0.05, 0.05, 0, -0.025, -0.025)) +
+  # add axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  # add centroids
+  geom_text(data = centPlot, 
+             aes(x = NMDS2, y = NMDS3, label = Factor_name))
+plot3
+
+```
+
+# PERMANOVA
+
+## All Factors
+```{r}
+# Set seed: pseudo-random number generator. Allows for replication.
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm <- adonis2(Y ~ fungi.env$moist + 
+                        fungi.env$shoot + 
+                        fungi.env$total + 
+                        fungi.env$root + 
+                        fungi.env$pop, 
+                      method = "bray")
+fungi.perm
+
+fungi.permstats <- permustats(fungi.perm)
+densityplot(fungi.permstats)
+
+```
+
+## Cluster
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C <- adonis2(Y ~ fungi.clust, 
+                      method = "bray")
+fungi.perm.C
+```
+
+## Moist + Shoot
+
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.MS <- adonis2(Y ~ fungi.env$moist + 
+                        fungi.env$shoot,
+                      method = "bray")
+fungi.perm.MS
+
+fungi.permstats <- permustats(fungi.perm)
+densityplot(fungi.permstats)
+
+```
+
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm <- adonis2(Y ~ fungi.clust + fungi.env$moist,
+                      method = "bray")
+fungi.perm
+
+fungi.permstats <- permustats(fungi.perm)
+densityplot(fungi.permstats)
+
+```
+
+## Pairwise
+
+### 1 + 2
+```{r}
+fungi.abund <- cbind(fungi.clust, fungi)
+# Subsetting to include only NI and IP
+fungi.C12 <- fungi.abund |> 
+  filter(fungi.clust %in% c("1","2"))
+# Save response as matrix
+Y.C12 <- as.matrix(fungi.C12[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C12 <- adonis2(Y.C12 ~ fungi.C12$fungi.clust, method = "bray")
+fungi.perm.C12
+```
+
+### 2 + 3
+```{r}
+# Subsetting
+fungi.C23 <- fungi.abund |> 
+  filter(fungi.clust %in% c("2","3"))
+# Save response as matrix
+Y.C23 <- as.matrix(fungi.C23[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C23 <- adonis2(Y.C23 ~ fungi.C23$fungi.clust, method = "bray")
+fungi.perm.C23
+```
+
+### 1 + 3
+```{r}
+# Subsetting
+fungi.C13 <- fungi.abund |> 
+  filter(fungi.clust %in% c("1","3"))
+# Save response as matrix
+Y.C13 <- as.matrix(fungi.C13[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C13 <- adonis2(Y.C13 ~ fungi.C13$fungi.clust, method = "bray")
+fungi.perm.C13
+```
+
+# Results Plots
+
+
+```{r}
+plot.center <- fungiPlot[,-4] |>
+  group_by(Cluster) |>
+  summarise(
+    Axis1.center = mean(PCOA1), 
+    Axis2.center = mean(PCOA2),
+    )
+
+plot.segs <- fungiPlot[,-4] |>
+  left_join(plot.center)
+
+fungi.scores.21
+fungi.scores
+fungi.scores.21 <- subset(fungi.scores[,1:2], Axis.1 > 0.1 & Axis.2 > 0.1)
+fungi.scores.22 <- subset(fungi.scores, Axis.1 > 0.1 & Axis.2 < -0.1)
+fungi.scores.23 <- subset(fungi.scores, Axis.1 < -0.1 & Axis.2 > 0.1)
+fungi.scores.24 <- subset(fungi.scores, Axis.1 < -0.1 & Axis.2 < -0.1)
+
+?subset
+
+fungi.scores.3 <- rbind(fungi.scores.21, fungi.scores.22, fungi.scores.23, fungi.scores.24)
+fungi.scores.3
+vecPlot
+```
+
+## Complete Plot
+
+```{r}
+# Ordination Plot
+plot1 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Moist), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Fitted Continuous Variable Arrows
+  ## Arrows
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  ## Labels
+  geom_text(data = vecPlot,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            color = "grey30",
+            size = 3,
+            nudge_y = 0.01) +
+# Fitted Factor (Categorical Variable) Centroids
+  geom_text(data = centPlot, 
+             aes(x = Axis.1, y = Axis.2, 
+                 label = Factor_name)) +
+# Fungal virtual taxa scores (weighted averages)
+  geom_text(data = fungi.scores, 
+            aes(x = Axis.1, y = Axis.2),
+            label = rownames(fungi.scores),
+            size = 2.5, color = "coral4") +
+# Spider plot for Clusters
+  ## Lines Points to Centroid
+  geom_segment(data = plot.segs, 
+               aes(x = PCOA1, y = PCOA2,
+                   xend = Axis1.center, yend = Axis2.center,
+                   colour = Cluster),
+               show.legend = FALSE) +
+  ## Cluster Centroids
+  geom_point(data = plot.center, 
+             aes(x = Axis1.center, y = Axis2.center, 
+                 colour = Cluster),
+             size = 4,
+             shape = 8,
+             show.legend = FALSE) +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+
+plot1
+
+```
+
+## Clusters
+```{r}
+plot2 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Moist), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Spider plot for Clusters
+  ## Lines Points to Centroid
+  geom_segment(data = plot.segs, 
+               aes(x = PCOA1, y = PCOA2,
+                   xend = Axis1.center, yend = Axis2.center,
+                   colour = Cluster),
+               show.legend = FALSE) +
+  ## Cluster Centroids
+  geom_point(data = plot.center, 
+             aes(x = Axis1.center, y = Axis2.center, 
+                 colour = Cluster),
+             size = 4,
+             shape = 8,
+             show.legend = FALSE) +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot2
+```
+
+## Fitted Variables
+
+```{r}
+plot3 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Moist), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Fitted Continuous Variable Arrows
+  ## Arrows
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  ## Labels
+  geom_text(data = vecPlot,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            color = "grey30",
+            size = 3,
+            nudge_y = 0.015) +
+# Fitted Factor (Categorical Variable) Centroids
+  geom_text(data = centPlot, 
+             aes(x = Axis.1, y = Axis.2, 
+                 label = Factor_name),
+            size = 4) +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot3
+
+```
+
+## Virtual Taxa
+
+```{r}
+plot4 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Moist), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Fungal virtual taxa scores (weighted averages)
+  geom_text(data = fungi.scores, 
+            aes(x = Axis.1, y = Axis.2),
+            label = rownames(fungi.scores),
+            size = 2.5, color = "coral4") +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot4
+```
+

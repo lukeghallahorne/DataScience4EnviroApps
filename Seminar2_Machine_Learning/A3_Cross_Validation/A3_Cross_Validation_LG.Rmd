@@ -1,0 +1,207 @@
+---
+title: "A3 Cross Validation"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 8
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(caret)
+library(palmerpenguins)
+```
+
+For this assignment, I will be using the Palmer penguins dataset. In particular, I want to model penguin body mass as a function of bill length and species and use cross validation methods to assess the skill of said model.
+
+# Loading Data
+
+```{r}
+# from palmerpenguins package
+data("penguins")
+head(penguins)
+
+# subset data to only include variables of interest, then drop entries with NA fields
+peng_data <- penguins |> 
+  # select columns of interest
+  select(species, bill_length_mm, body_mass_g) |>
+  # remove NAs
+  drop_na()
+```
+
+# Cross Validation Methods
+## Holdout
+The first and simplest cross validation approach excludes one third of the original data before training the model, then uses the excluded values to test the fit (i.e., bias vs variance) of the model. First, I will just do this once by manually separating one third of the data. Then, I will do this multiple times with a K-fold cross validation.
+
+```{r}
+# set seed for replication - this time I chose pi because pie
+set.seed(314)
+
+# create a vector of indices to categorize 1/3 of points as test and 2/3 as train
+n <- nrow(peng_data)
+testRows <- sample(1:n, size = n * 1/3, replace = FALSE)
+
+peng_data$test <- FALSE
+peng_data$test[testRows] <- TRUE
+# training datapoints are now labelled as FALSE, while test datapoints are labelled as TRUE
+head(peng_data)
+table(peng_data$test)
+```
+
+With a quick plot, we can see the random selection of test and train points from the whole dataset.
+
+```{r}
+p1 <- ggplot(data = peng_data) +
+  geom_point(aes(x = bill_length_mm, y = body_mass_g, 
+                 color = species, shape = test))
+p1
+```
+
+Next, I make a linear model using the training subset, modeling body mass as a function of bill length and species. Then I use the linear model to predict body mass for the testing subset and compare the predicted values to the actual values.
+
+```{r}
+# subset testing and training sets
+test_data <- peng_data[peng_data$test,]
+train_data <- peng_data[!peng_data$test,]
+
+# linear model
+lm1 <- lm(body_mass_g ~ bill_length_mm + species, data = train_data)
+summary(lm1)
+
+# predict values for testing subset
+test_data$yhat <- predict(lm1, newdata = test_data)
+```
+
+Now we can look at the fit of the model with $R^2$, root mean square error (RMSE) and mean absolute error (MAE)
+
+```{r}
+rsq <- cor(test_data$yhat, test_data$body_mass_g)^2
+rmse <- sqrt(mean((test_data$yhat - test_data$body_mass_g)^2))
+mae <- mean(abs(test_data$yhat - test_data$body_mass_g))
+
+rsq
+rmse
+mae
+```
+
+This cross-validation method gives us a point estimate for the $R^2$ as well as an error margin. We can repeat the method multiple times with different test and training subsets to get a range of expected $R^2$ values by using K-fold cross validation.
+
+## K-fold
+
+For K-fold cross validation, the data are separated multiple times into training and testing sets. This way, each datapoint is used as a test point as well as a training point for the model. I will use k = 10 to start, then compare with the Holdout cross validation I did above.
+
+```{r}
+# set seed for replication
+set.seed(314)
+# set number of folds k
+k <- 10
+# pull number of observations n
+n <- nrow(peng_data)
+# reshuffle penguin data for assigning folds
+peng_data2 <- peng_data[sample(n),1:3]
+# assign datapoints fold groups
+peng_data2$fold <- cut(seq(1, n), breaks = k, labels = FALSE)
+
+# create empty matrix for loop output
+peng_kfold <- matrix(nrow = k, ncol = 3)
+colnames(peng_kfold) <- c("r2", "rmse", "mae")
+for(i in 1:k) {
+  # filter test and train datasets 
+  train_data <- filter(peng_data2, fold != i)
+  test_data <- filter(peng_data2, fold == i)
+  
+  # build linear model on train dataset
+  loop_lm <- lm(body_mass_g ~ bill_length_mm + species, data = train_data)
+  # predict yhat values for test dataset
+  test_data$yhat <- predict(loop_lm, newdata = test_data)
+  
+  # R^2
+  peng_kfold[i,1] <- cor(test_data$yhat, test_data$body_mass_g)^2
+  # RMSE
+  peng_kfold[i,2] <- sqrt(mean((test_data$yhat - test_data$body_mass_g)^2))
+  # MAE
+  peng_kfold[i,3] <- mean(abs(test_data$yhat - test_data$body_mass_g))
+}
+
+peng_kfold
+```
+
+From this, we can calculate an interval estimate for our test statistics ($R^2$, RMSE, and MAE) using mean and standard deviation.
+
+```{r}
+# mean R^2
+mean_r2 <- mean(peng_kfold[,1])
+# R^2 standard error
+se_r2 <- sd(peng_kfold[,1]) / sqrt(k)
+
+# mean Root Mean Square Error
+mean_rmse <- mean(peng_kfold[,2])
+# RMSE standard error
+se_rmse <- sd(peng_kfold[,2]) / sqrt(k)
+
+# mean Mean Absolute Error
+mean_mae <- mean(peng_kfold[,3])
+# MAE standard error
+se_mae <- sd(peng_kfold[,3]) / sqrt(k)
+
+```
+
+With K-fold cross validation, our linear model has an average $R^2$ of 0.778 +/- 0.013, an average RMSE of 375.6 +/- 11.03, and an average MAE of 300.2 +/- 9.37.
+
+We could repeat this for as many k as we want, or reshuffle the original dataset and run the k-fold loop again. 
+
+## LOOCV
+If we increase k all the way to $n$, then arrive at the third method: Leave One Out Cross Validation (LOOCV). This uses the whole dataset except one point to train the model, tests the model with the omitted point, and repeats the process for every point in the data. This can be computationally expensive for large datasets, but for our 342 penguins it is a reasonable loop.
+
+```{r}
+# set seed for replication
+set.seed(314)
+# pull number of observations n
+n <- nrow(peng_data)
+
+# create empty matrix for loop output
+peng_LOOCV <- matrix(nrow = n, ncol = 2)
+colnames(peng_LOOCV) <- c("y", "yhat")
+for(i in 1:n) {
+  # filter test and train datasets 
+  train_data <- peng_data[-i,1:3]
+  test_data <- peng_data[i,1:3]
+  
+  # build linear model on train dataset
+  loop_lm <- lm(body_mass_g ~ bill_length_mm + species, data = train_data)
+  
+  peng_LOOCV[i,1] <- as.numeric(test_data[,3])
+  # predict yhat values for test dataset
+  loop_yhat <- predict(loop_lm, newdata = test_data)
+  peng_LOOCV[i,2] <- loop_yhat[1]
+}
+
+head(peng_LOOCV)
+
+  # R^2
+  LOOCV_r2 <- cor(peng_LOOCV[,1], peng_LOOCV[,2])^2
+  # RMSE
+  LOOCV_rmse <- sqrt(mean((peng_LOOCV[,2] - peng_LOOCV[,1])^2))
+  # MAE
+  LOOCV_mae <- mean(abs(peng_LOOCV[,2] - peng_LOOCV[,1]))
+  
+LOOCV_r2
+LOOCV_rmse
+LOOCV_mae
+```
+
+Given that LOOCV provides a single $R^2$ value, I am a little unsure of how to compare these two. However, all three stats are incredibly similar, so I feel fairly confident in both methods.
+
+
+

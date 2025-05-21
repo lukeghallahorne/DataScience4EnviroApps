@@ -1,0 +1,63 @@
+---
+title: "A9 Improving Model Learning"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 8
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Library
+library(tidyverse)    # for general wrangling and visualization
+library(rpart)        # for decision trees
+library(visNetwork)   # for DT plotting
+library(ipred)        # for bagging
+library(randomForest) # for random forest
+library(caret)        # for RF tuning
+```
+
+# Improving Model Learning - Concepts
+## Bagging
+
+Bootstrap aggregating, or "bagging", refers to a model learning technique often utilized with decision tree models. When creating a decision tree, algorithms like `rpart` or `C5.0` use predictors in the training data to create classifications or numerical predictions based on a series of probabilities. Bagging uses this same approach, but reiterates multiple bootstrap samples from the training set for each decision tree. The votes from these multiple models are then combined (aggregated) into the final decision for the model.
+
+Given that bagging is a relatively simple ensemble of models, it performs best when used with unstable learners - i.e., models that tend to change dramatically when the input data change slightly. This is why bagging works particularly well for decision trees like those produced by `rpart`. However, bagging can function quite well with other model types that vary significantly when the input data are modified.
+
+## Bagging vs. Random Forest
+
+A random forest approach is similar to bagging in it's approach to creating model ensembles, but exclusively uses decision tree models. In fact, only when a decision tree forest is performed in a particular way, defined by Breiman and Cutler in 2001, is it technically called a "random forest", as it is a trademarked approach.
+
+Random forests pull random, iterative subsets from the training data to create decision trees. Unlike bagging, however, random forests create trees from a random set of features as well as datapoints in the training set. This allows them to handle very large datasets by partitioning the data into more computationally-manageable chunks while retaining a similar error rate to other machine learning approaches. The resulting votes from each decision tree are then combined (categorical) or averaged (numerical) to create predictions across all features. This makes a random forest an excellent approach for many problems: it can handle a great deal of noise, which is often cancelled out by the different submodels, and ultimately will select a final model that only utilizes the most important features. However, the output from a random tree is not nearly as easy to interpret as a single decision tree, which can complicate understanding and communication of results.
+
+## RandomForest vs Caret's Train
+
+The `RandomForest` package is purportedly a very common utilization of the random forest approach and has functionality within the `caret` package. When running a single `randomForest()`, the function defaults to creating 500 different decision trees, each pulling a number of features from the original dataset equal to the square root of the total number of features. The relatively small number of features and high number of iterations is to ensure that each feature is used in multiple trees within the random forest. The function then returns a model object that can be used to make predictions on a testing dataset. Interestingly, `randomForest` doesn't just set aside a single training set - instead, predictions are made for every datapoint not included in each example model, then predictions are aggregated into the final model fit. This gives it a lot of predictive power even without further cross validation. 
+
+When including this function in the `train()` function from `caret`, we can add cross validation steps as well as try multiple values of features to pull. Then, `train` outputs the best model based on performance (accuracy or kappa) or performance and efficiency (i.e., the most parsimonious model within 1 standard error of the highest accuracy). There are other alternatives to selecting the best model as well from the repeated iterations. We can then compare different numbers of features tested across the whole training set to find the best set of parameters for the random forest. This can take time, as we are repeatedly cross validating and running the `RandomForest` multiple times, but will ultimately produce the fastest and/or most accurate model compared to a single decision tree or single random forest (at least, in most cases). 
+
+I am curious as to how the proper "Random Forest" technique trademarked by Breiman and Cutler differs from other decision tree forest approaches.
+
+# Model Learning - Brand New Model
+
+I would very much like to play around with tuning and testing a new model with the fish catch data. However, due to time constraints I stopped here for the initial submission. If I am able to make some headway this evening beyond poorly-annotated code slop, I plan to reupload a version with some fun tests.
+
+
+
+
+
+
+
+
+
+
