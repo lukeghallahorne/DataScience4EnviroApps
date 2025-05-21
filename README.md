@@ -9,6 +9,11 @@ Work related to the Data Science for Environmental Applications certificate prog
 # Data Visualization
 This seminar focused on different aspects of good data visualization practices. As such, the data used were sourced from R packages or provided by Dr. Andy Bunn (WWU) as good examples of different visualization approaches.
 
-* [Visualizing Amounts:](https://rpubs.com/lukeghallahorne/dataviz_amounts) https://rpubs.com/lukeghallahorne/dataviz_amounts
-* [Distributions:](https://rpubs.com/lukeghallahorne/dataviz_distributions) https://rpubs.com/lukeghallahorne/dataviz_distributions
+* Visualizing Amounts: [rpubs.com/lukeghallahorne/dataviz_amounts](https://rpubs.com/lukeghallahorne/dataviz_amounts)
+* Distributions: [rpubs.com/lukeghallahorne/dataviz_distributions](https://rpubs.com/lukeghallahorne/dataviz_distributions)
+* Time Series: [rpubs.com/lukeghallahorne/dataviz_timeseries](https://rpubs.com/lukeghallahorne/dataviz_timeseries)
+* Visualizing Trends: [rpubs.com/lukeghallahorne/dataviz_trends](https://rpubs.com/lukeghallahorne/dataviz_trends)
+* Geospatial Data: [rpubs.com/lukeghallahorne/dataviz_geodata](https://rpubs.com/lukeghallahorne/dataviz_geodata)
+* Uncertainty: [rpubs.com/lukeghallahorne/dataviz_uncertainty](https://rpubs.com/lukeghallahorne/dataviz_uncertainty)
+
 
