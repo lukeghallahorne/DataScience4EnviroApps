@@ -1,0 +1,87 @@
+---
+title: "A5 Decision Trees"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+    fig_height: 8
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Library
+library(tidyverse)
+library(C50)
+library(caret)
+```
+
+# The Data
+
+```{r}
+# read in data
+mush <- read_csv("mushroomsClean.csv")
+mush <- mush |>
+  mutate(across(where(is_character), as_factor))
+str(mush)
+```
+
+I would like to model toxicity using decision trees based on a number of variables that seem reasonable. By reasonable, I mean variables that I think I would be able to distinguish about a mushroom (definitely not a mycologist either) in order to make a model I would feel confident trusting.
+
+Of the 21 variables provided in the data, I think the following would be noticeable by an average mushroom-eater: cap_shape, cap_color, bruises, gill_color, stalk_shape, stalk_color_above,  stalk_color_below, population, and habitat.
+
+```{r}
+mush_clean <- mush |>
+  select(toxicity, 
+         cap_shape, cap_color, bruises, gill_color, stalk_shape,
+         stalk_color_above,  stalk_color_below, population, habitat)
+```
+
+
+# Decision Tree
+
+```{r}
+mush_model <- C5.0(toxicity~., data = mush_clean)
+mush_model
+summary(mush_model)
+```
+
+Impressively, buff gill color is a huge indicator of toxicity. Now if only I knew which color "buff" was... Gill color, stalk color, and cap color look like they are dominating the first few decisions, but from there general categories seem irrelevant as you go from one decision to the next.
+
+```{r}
+plot(mush_model)
+```
+
+I was curious how base-plot would render this, and I am not impressed. I'm hoping to come back to this and rework the visualization once I complete the assignment.
+
+# Training and Testing
+
+```{r}
+n <- nrow(mush)
+rows2test <- sample(n, size = 0.3 * n)
+mush_train <- mush[-rows2test,]
+mush_test <- mush[rows2test,]
+
+
+mush_model2 <- C5.0(toxicity ~ ., data = mush_train)
+mush_fits <- predict(mush_model2, mush_test)
+mush_cm <- confusionMatrix(mush_fits, mush_test$toxicity)
+mush_cm
+
+```
+
+The model numerically does very well, with an accuracy of `r round(mush_cm$overall[1], 3)`. However, a little less than 3 percent of the time, the model classifies a poisonous mushroom as being edible. I eat a lot of mushrooms, so 3 percent, while not being very large statistically, is a little too high for my taste. This is only a single test-train set, too, so repeated cross validation might reduce that value and leave me a little more confident in the model. I would definitely want to refine the model before using it to gauge how edible an unknown mushroom was.
+
+
+
+
+
+

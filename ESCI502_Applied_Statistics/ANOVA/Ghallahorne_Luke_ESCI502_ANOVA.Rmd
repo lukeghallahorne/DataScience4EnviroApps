@@ -1,0 +1,331 @@
+---
+title: "ANOVA Homework"
+author: "Luke Ghallahorne"
+date: '`r Sys.Date()`'
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_ANOVA/Data')
+```
+
+
+```{r check_wd, include=FALSE}
+getwd()
+```
+
+```{r library, include=FALSE}
+library(ggplot2)
+library(tidyverse)
+library(car)
+library(multcompView)
+library(PNWColors)
+library(knitr)
+# library(agricolae) loaded this for a test but did not use functions. kept here for reference.
+```
+
+
+## Fish
+
+We are interested in understanding salmon growth as fish migrate downstream. Our scientific hypothesis is that mean fish size increases with distance downstream because as salmon migrate from their natal location, they eat and grow, and thus, position in the river system would determine size. We are curious about where they seem to grow the most.
+
+So, last April, we took our beach seine out and collected juvenile salmon in 3 habitats along a gradient in the Skagit River (on the same day): Tidal Freshwater (tf, most upstream), Delta (delta, middle), and Estuary (estuary, farthest downstream). We measured lengths of all the fish caught (fork length, in mm) in two seine hauls at each site. We would like to test our hypothesis of equal growth in fish at habitats along a river gradient.
+
+### a. State your statistical hypotheses.
+
+H~0~: $\mu_T = \mu_D = \mu_E$
+
+Null: Mean fork length will be equal at all 3 test habitats.
+
+H~a1~: $\mu_T \neq \mu_D$ and/or $\mu_T \neq \mu_E$ and/or $\mu_D \neq \mu_E$
+
+Alternative 1: Mean fork length in at least one habitat is not equal to the others.
+
+H~a2~: $\mu_T < \mu_D < \mu_E$
+
+Alternative 2: Mean fork length will be greater at sites further downstream than those upstream. (This requires analysis beyond an ANOVA, which can only determine if one or more of the means is different, not which or how much.)
+
+### b. Generate a subsample of 25 fish from our fish data.
+
+```{r subsample_fish}
+set.seed(50)
+  # set.seed creates reproducible RNG; code after the set.seed() will create the same array of random numbers the next time it is run. The seed number itself is arbitrary.
+
+#Generate subsample of Fish Data 
+T<-round(rnorm(25, 29.7, 0.6), 1)
+D<-round(rnorm(25, 32.7, 0.8), 1)
+E<-round(rnorm(25, 33.5, 1.2), 1)
+  # rnorm(n, mean, sd)
+  # round(x, digits = 1)
+
+#Generate habitat identifiers
+t<-rep("tf", 25)
+d<-rep("delta", 25)
+e<-rep("estuary", 25)
+  # rep() repeats an input x a number of times
+    # rep(x, times)
+
+#Make a data frame
+habitat<-c(t, d, e)
+fl<-c(T,D,E)
+fish<-data.frame(habitat,fl)
+
+head(fish)
+dim(fish)
+```
+
+### c. Assessment of assumptions.
+#### Testing normality: Histograms.
+
+
+```{r echo=FALSE, fig.asp=0.45}
+# fish$habitat<- as.factor(fish$habitat) --> tried this as a fix for an error with facet_wrap but turned out to not be necessary; I needed to include the ~ before the column name.
+
+# head(fish)
+fish |>
+  ggplot(aes(fl)) +
+  geom_histogram(binwidth = 0.5, col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~habitat) +
+  theme_minimal() +
+  xlab("Fork Length (mm)") +
+  ylab("Count") +
+  ggtitle("Fish Size along the Skagit River") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+
+From looking at the histograms, fork length appears normally distributed.
+
+#### Testing normality: qqplots.
+
+
+```{r include = FALSE}
+par(mfrow = c(2,2))
+
+qqPlot(fish$fl[fish$habitat=="delta"], main = "Delta", col.lines = "turquoise3", ylab = "Delta")
+qqPlot(fish$fl[fish$habitat=="estuary"], main = "Estuary",
+       col.lines = "turquoise3", ylab = "Estuary")
+qqPlot(fish$fl[fish$habitat=="tf"], main = "Tidal Freshwater",
+       col.lines = "turquoise3", ylab = "Tidal Freshwater")
+
+# I created these three plots first, before I found online that you can create all three with a single qqPlot function, as below.
+```
+
+```{r echo = FALSE, fig1, fig.asp=1.1}
+qqPlot(fl ~ habitat, data = fish, col.lines = "turquoise3")
+
+# Not entirely sure what the numbers being put on each plot are. A cursory search online didn't yield much information, but I may be missing something fundamental about qq plots in general?
+```
+
+
+The qqplots of each habitat further indicate that the fork length data are normally distributed.
+
+#### Testing for homoscedasticity.
+
+I first created a stripchart of fork length by habitat to visualize the spread of each group.
+
+```{r fig.asp=1, echo=FALSE}
+stripchart(fl ~ habitat, data = fish, method = "jitter", jitter = 0.1, pch = 19, col = "turquoise3", las = 1, vertical = TRUE)
+```
+
+Variances between the delta and estuary habitats are very similar; tidal freshwater has about half the variance as delta or estuary, visually.
+
+I then calculated standard deviation for each habitat to compare variances.
+
+```{r}
+tapply(fish$fl, fish$habitat, sd)
+```
+$s$~tf~$=0.490$
+
+$s$~delta~$=0.895$
+
+$s$~estuary~$=1.134$
+
+
+The standard deviations of each habitat are close enough to assume equal variances for analysis. I could conduct a Levene's Test for Homogeneity of Variance but our sample size is rather small, and a test does not really feel necessary.
+
+### d. Conduct an ANOVA.
+
+Fish Data ANOVA Table:
+
+```{r echo=FALSE}
+fish.aov <- aov(fish$fl ~ fish$habitat)
+summary(fish.aov)
+```
+Degrees of freedom: 2, 72
+F value: 116.3
+p < 0.001
+
+At least one mean is significantly different from the rest.
+
+I compared the means of each habitat to see which differed from the others.
+
+```{r echo=FALSE}
+tapply(fish$fl, fish$habitat, mean)
+```
+$\overline x$~tf~ $= 29.6 mm$
+
+$\overline x$~delta~ $= 32.7 mm$
+
+$\overline x$~estuary~ $= 33.0 mm$
+
+Tidal freshwater looks like the best candidate for the different mean, but I performed a Tukey HSD test to verify that.
+
+```{r echo=FALSE}
+fish.tukey <- TukeyHSD(fish.aov)
+fish.tukey
+```
+
+Fork lengths in the estuary and delta habitats both differed significantly from tidal freshwater (p < 0.001 for each), but do not differ from each other (p < 0.382).
+
+### e. Conclusions.
+
+With an $\alpha = 0.5$, the ANOVA shows that mean fork length in at least one habitat of the Skagit River differs significantly from the others ($F$~2,72~ = 116.3, p < 0.001). This provides evidence that we can reject the null hypothesis that mean lengths are equal across habitats.
+
+```{r include=FALSE}
+
+# compact letter display for Tukey test - found on https://rpubs.com/RosaneRech/OneFactorBoxplot
+
+cld <- multcompLetters4(fish.aov, fish.tukey)
+print(cld)
+
+# table with factors and 3rd quantile for adding labels to plot
+Tk <- group_by(fish, habitat) |>
+  summarise(mean=mean(fl), quant = quantile(fl, probs = 0.75)) |>
+  arrange(desc(mean))
+
+# extracting the compact letter display and adding to the Tk table
+cld <- as.data.frame.list(cld$'fish$habitat')
+Tk$cld <- cld$Letters
+
+print(Tk)
+```
+
+```{r echo=FALSE}
+fish |>
+  ggplot(aes(reorder(habitat, fl), fl)) +
+  geom_boxplot(aes(fill = habitat), show.legend = FALSE) +
+  labs(x = "Habitat", y = "Fork Length (mm)") +
+  ggtitle("Salmon Size in the Skagit River") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(data = Tk, aes(x=habitat, y = quant, label = cld),
+            size = 4, hjust = -1, vjust = -1) +
+  scale_fill_manual(values = c("turquoise3", "turquoise3", "aquamarine2")) +
+  scale_x_discrete(labels=c("Tidal Freshwater", "Delta", "Estuary"))
+  
+
+
+```
+
+Mean fork length at the tidal freshwater habitat ($\overline x$~tf~ = 29.6 mm) was significantly lower than at the estuary ($\overline x$~estuary~ = 33.0 mm, p < 0.001) or delta ($\overline x$~delta~ = 32.7 mm, p < 0.001) habitats. However, fork length did not differ between the delta and the estuary (p < 0.382). 
+
+Since tidal freshwater is the most upstream habitat, most growth in salmon in the Skagit River occurs between there and the delta, but the fish experience little to no growth while migrating from the delta to the estuary.
+
+## Fish with a Covariate
+
+Refit the fish data, but add temperature as a covariate.
+
+```{r}
+temp<-c(rnorm(25, 15, 1.5), rnorm(25, 14, 2.5), rnorm(25, 12, 2.5)) 
+fish2<-cbind(fish, temp)
+head(fish2)
+```
+
+### a. Carry through the analysis.
+
+*I realized after going about the next section that I should have grouped temperature into categories for the 2-way ANOVA. I left in the first analysis to show my process - the final one with two temperature groups is at the end of this section.*
+
+#### Check for normality and homoscedasticity of temperature.
+
+```{r echo=FALSE, fig.asp=0.5}
+fish2 |>
+  ggplot(aes(temp)) +
+  geom_histogram(binwidth = 2, col ="turquoise4", fill = "turquoise4") +
+  facet_wrap(~habitat) +
+  theme_minimal() +
+  xlab(expression(paste("Temperature (", degree, "C)"))) +
+  ylab("Count") +
+  ggtitle("Water Temperature along the Skagit River") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r fig.asp=1, echo=FALSE}
+qqPlot(temp ~ habitat, data = fish2, col.lines = "turquoise3")
+
+```
+
+From the histograms and qqplots, temperature is normally distributed enough for analysis with ANOVA.
+
+```{r fig.asp=1, echo=FALSE}
+stripchart(temp ~ habitat, data = fish2, method = "jitter", jitter = 0.1, pch = 19, col = "turquoise3", las = 1, vertical = TRUE)
+```
+
+```{r}
+tapply(fish2$temp, fish2$habitat, sd)
+```
+$s$~tf~$=1.529$
+
+$s$~delta~$=2.244$
+
+$s$~estuary~$=2.493$
+
+Spread and standard deviations show that variances are sufficiently equal.
+
+#### ANOVA.
+
+```{r}
+str(fish2)
+
+fish2.aov <- aov(fl ~ habitat*temp, data = fish2)
+summary(fish2.aov)
+```
+Fork length is significantly affected by habitat ($F$~2,69~ = 117.893, p < 0.001) but not by temperature ($F$~1,69~ = 2.504, p < 0.118), and there is no significant interaction between habitat and temperature ($F$~2,69~ = 0.750, p < 0.476). Adding temperature to the analysis had no effect on the conclusions that fish grow from one habitat to the next heading downstream.
+
+I realized after conducting this 2-way ANOVA that because temperature is a continuous variable, an ANOVA like this is not an appropriate analysis. I separated the temperatures into two categories: warm (above the mean temperature for all habitats) and cold (below that mean). 
+
+```{r}
+summary(fish2$temp)
+
+fish3 <- fish2 
+fish3$temp.cat <- cut(fish3$temp, breaks = c(6,13.98,21), labels = c("cold", "warm"))
+head(fish3)
+```
+```{r}
+fish3.aov <- aov(fl ~ habitat*temp.cat, data = fish3)
+summary(fish3.aov)
+```
+With two categories of temperature, cold (below mean) and warm (above mean), there is no significant effect on fork length ($F$~1,69~ = 2.780, p < 0.100) and no significant interaction between temperature and habitat ($F$~2,69~ = 1.082, p < 0.345). There remains a significant effect on fork length by habitat ($F$~2,69~ = 114.9, p < 0.001). Adding temperature as a covariate changes the degrees of freedom but not the outcome of the test.
+
+<br>
+
+After our discussion of ANCOVA and linear models in class, I decided to run the analysis with temperature as a covariate through a linear model to see if anything changed.
+
+```{r}
+fish.lm<-lm(fl~habitat*temp, data=fish2) 
+summary(fish.lm)
+anova(fish.lm)
+```
+
+The linear model brings me to the same conclusion as the ANOVA above - we fail to reject the null that temperature does not have an interacting effect on salmon fork length.
+
+<br>
+
+## ANOVA in the Wild.
+
+### Article using ANOVA.
+
+Zacherl DC, Morgan SG, Swearer SE, Warner RR. 2009. A shell of its former self: can Ostrea lurida Carpenter 1864 larval shells reveal information about a recruit's birth location? Journal of Shellfish Research. 28(1): 23-32. http://dx.doi.org/10.2983/035.028.0107 Retrieved from https://escholarship.org/uc/item/4qd191nt
+
+This paper investigates the potential of using chemical tags in larval shells of Ostrea lurida as an indicator of birth location. Zacherl et al. compared the calcium-element ratios for seven metals after larvae were reared in differing concentrations, as well as changing ratios throughout larval development.
+
+The researchers performed a two-way ANOVA for each element they tested, comparing seawater chemistry, ontogeny, and the interaction between seawater and ontogeny. For magnesium, seawater had $F$~2,6~ = 1.72, p < 0.257; ontogeny had $F$~1,6~ = 100.83, p < 0.001; and seawater-ontogeny interactions had $F$~2,6~ = 0.86, p < 0.468. Seawater had 3 groups, ontogeny 2. Samples were 7 across the experiment.
+
+The question was to determine if there is a difference between the elements taken in from seawater when *O. lurida* larvae are being brooded versus when they are pelagic in the plankton. They found that seawater concentration changes around the larvae do not significantly alter shell composition ($F$~2,6~ = 1.72, p < 0.257), but shell chemistry does change as development progresses in the planktonic phase ($F$~1,6~ = 100.83, p < 0.001). There was no significant effect from the interaction between seawater and ontogeny ($F$~2,6~ = 0.86, p < 0.468).
+
+
+
+<br>
+<br>
+<br>

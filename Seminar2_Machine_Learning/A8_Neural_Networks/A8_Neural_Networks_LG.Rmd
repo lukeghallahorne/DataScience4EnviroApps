@@ -1,0 +1,189 @@
+---
+title: "Neural Networks"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+    fig_width: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(caret)
+library(scales)
+```
+
+# Data
+
+These data consist of 4 months' worth of solar radiation measurements (kWh per m^2) as well as environmental conditions of temperature (deg C), air pressure (in Hg), humidity (%), and wind speed (m/s). The original data were measured every 5 minutes, so I followed the code in the example to summarize them by day, taking the mean, minimum, maximum, standard deviation, and range of each variable. I then rescaled each variable to a 0 to 1 scale for the neural network analysis.
+
+```{r}
+solar <- readRDS("solarPrediction.rds")
+head(solar)
+
+# summarize variables by day with means, minima, maxima, and sd
+solarDay <- solar |> 
+  group_by(Date = date(DateTime)) |> 
+  summarise(kWh_m2 = sum(Radiation * 60 * 5) * 2.77778e-7,
+            avgTemperature = mean(Temperature),
+            minTemperature = min(Temperature),
+            maxTemperature = max(Temperature),
+            sdTemperature = sd(Temperature),
+            rangeTemperature = maxTemperature - minTemperature,
+            avgPressure = mean(Pressure),
+            minPressure = min(Pressure),
+            maxPressure = max(Pressure),
+            sdPressure = sd(Pressure),
+            rangeTemperature = maxPressure - minPressure,
+            avgHumidity = mean(Humidity),
+            minHumidity = min(Humidity),
+            maxHumidity = max(Humidity),
+            sdPHumidity = sd(Humidity),
+            rangeHumidity = maxHumidity - minHumidity,
+            avgSpeed = mean(Speed),
+            minSpeed = min(Speed),
+            maxSpeed = max(Speed),
+            sdPSpeed = sd(Speed),
+            rangeSpeed = maxSpeed - minSpeed,
+            dayLengthHrs = as.numeric(((max(TimeSunSet) - 
+                                          min(TimeSunRise)) / 60 / 60)))
+
+head(solarDay)
+
+solarRescale <- solarDay |>
+  select(-Date) |>
+  mutate(across(everything(), rescale))
+```
+
+There are numerous Neural Network methods available with `train` from the `caret` package. I chose to compare the original method from the example, `neuralnet`, with two others - Bayesian Regularized Neural Networks `brnn`, and Monotone Multi-Layer Perceptron Neural Network `monmlp`. 
+
+The neural net method allows me to optimize the number of nodes within each of 3 hidden layers. The Bayesian method appears to only have one hidden layer but allows for modulation of the number of nodes. The Monotone Multi-Layer Perceptron method allows for changing the number of hidden units (presumably the nodes in a single layer) as well as the number of models to run. 
+
+I am a little unclear as to the differences between all of the Multi-Layer Perceptron methods, as there are quite a few. From what I researched, the multilayer perceptron is a linear approach to neural networks (there is no cycling of data between hidden layers, as other methods may do), but typically uses non-linear activation functions. Playing around with these three methods and tuning their parameters to the best fit feels like a good place to start with these data. For actual use, I would look into the specific method in greater detail, but here I just compared the three methods.
+
+# Neural Networks
+## Method 1: Neural Net
+
+```{r}
+modelLookup(model = "neuralnet")
+```
+
+This method has parameters to be tuned: layers 1 through 3 (i.e., three hidden layers within the black box). 
+
+```{r}
+solar_nn1 <- train(kWh_m2 ~ ., data = solarRescale, method = "neuralnet")
+solar_nn1
+```
+
+When I first ran `train` with this model without any parameter specifications, it held both layers 2 and 3 at values of 0 and assigned one node to layer 1. When I ran it again, it found the lowest RMSE was with 3 nodes in layer 1, though the values were incredibly similar (0.164 vs 0.153). To compare multiple iterations of different layer values, I set up a tuning grid for the `train` function and ran it again.
+
+```{r}
+# function to restore scaled values to original range of data
+unscale <- function(x, maxim, minim) {
+  y <- (x * (maxim - minim) + minim)
+  return(y)
+}
+```
+
+```{r}
+set.seed(2337)
+solar_TuneGrid <- expand.grid(layer1 = c(1,3,5), layer2 = 0:2, layer3 = 0:2)
+
+solar_nn2 <- train(kWh_m2 ~ ., data = solarRescale, method = "neuralnet", 
+             tuneGrid = solar_TuneGrid)
+
+solar_nn2$bestTune
+solar_nn2$results[27,]
+unscale(x = solar_nn2$results$MAE[27], 
+        maxim = max(solarDay$kWh_m2), minim = min(solarDay$kWh_m2))
+```
+
+Running the neural net across all combinations in the tuning grid, the best model used 5 nodes in layer 1, 2 nodes in layer 2, and 2 nodes in layer 3 (RMSE = 0.144, R^2 = 0.68, MAE = 0.828). This fits slightly better than the untuned values I originally found.
+
+## Method 2: Bayesian Regularized Neural Networks
+
+```{r}
+modelLookup(model = "brnn")
+```
+
+The Bayesian neural network has only one parameter for tuning: the number of neurons. I set up the same process as above to see if it performs any better than the original neural network.
+
+```{r results = FALSE}
+set.seed(2337)
+solar_TuneGrid <- expand.grid(neurons = 1:7)
+
+solar_brnn <- train(kWh_m2 ~ ., data = solarRescale, method = "brnn", 
+             tuneGrid = solar_TuneGrid, 
+             # tried to mute output with verbose = FALSE but no luck with brnn
+             trControl = trainControl(verboseIter = FALSE), verbose = FALSE)
+```
+
+```{r}
+solar_brnn$bestTune
+solar_brnn$results[1,]
+unscale(x = solar_brnn$results$MAE[1], 
+        maxim = max(solarDay$kWh_m2), minim = min(solarDay$kWh_m2))
+```
+
+The Bayesian Regularized Neural Network does slightly better than the original neural network, tuning to just a single neuron (RMSE = 0.142, R^2 = 0.70, MAE = 0.83).
+
+## Method 3: Monotone Multi-Layer Perceptron Neural Network
+
+```{r}
+modelLookup("monmlp")
+```
+
+The Monotone Multi-Layer Perceptron Neural Network has two tunable parameters: the number of hidden units (presumably the number of nodes in the hidden layer), and number of models. 
+
+```{r results = FALSE}
+set.seed(2337)
+
+solar_monmlp <- train(kWh_m2 ~ ., data = solarRescale, method = "monmlp")
+```
+
+```{r}
+solar_monmlp$bestTune
+solar_monmlp$results[1,]
+unscale(x = solar_monmlp$results$MAE[1], 
+        maxim = max(solarDay$kWh_m2), minim = min(solarDay$kWh_m2))
+```
+
+
+I tried running the above method without any parameter adjustments. Train selected 1, 3 and 5 as values for hidden 1. As with the Bayesian neural network, the optimal model had 1 node (RMSE = 0.161, R^2 = 0.62, MAE = 0.94).
+
+
+Of all the iterations of neural networks that I ran, the Bayesian Regularized Neural Network was the best model fit to the data with a single neuron (RMSE = 0.142, R^2 = 0.70, MAE = 0.83). 
+
+```{r}
+solar_obs <- solarDay |>
+  select(Date, kWh_m2, avgTemperature, 
+         avgPressure, avgHumidity, avgSpeed) |>
+  rename("obs" = "kWh_m2") |>
+  pivot_longer(cols = -c(Date, obs))
+solar_pred <- predict(solar_brnn, solarRescale[,-1])
+solar_pred <- tibble(data.frame(Date = solarDay$Date),
+                     pred = unscale(solar_pred, 
+                                     maxim = max(solarDay$kWh_m2), 
+                                     minim = min(solarDay$kWh_m2)))
+solar_pred_long <- solar_pred |>
+  inner_join(solar_obs, by = join_by("Date")) |>
+  pivot_longer(cols = c(pred, obs), 
+               names_to = "obs_pred", values_to = "kWh_m2")
+
+p1 <- ggplot(data = solar_pred_long) +
+  geom_point(aes(x = value, y = kWh_m2, color = obs_pred)) +
+  geom_path(aes(x = value, y = kWh_m2, group = Date),arrow = arrow(ends = "first", length = unit(0.075, "inches"))) +
+  facet_wrap(~name, scales = "free", ncol = 1)
+p1
+```
+
+

@@ -1,0 +1,156 @@
+#setwd("C:/Users/lukeg/OneDrive - Western Washington University/
+ #     Esci502_WD/HW_Describing_Data/Data")
+
+# Data Set 1: Snow Data
+snow<-read.csv("snow12_19.csv")
+
+## Basic Plot Function
+### Format 1: 'x =  , y =  '
+    # Explicitly calls out x and y variables
+plot(x = snow$temp, y = snow$inches)
+    
+    # Can be shortened to:
+plot(snow$temp, snow$inches, xlab = "Temp. (deg F)", ylab = "Snowfall (inches)",
+     pch = 8)
+    
+    ## Order is always x, y
+    ## Point styles: "pch"
+
+### Format 2: 'y ~ x'
+    # Variables input as a formula: "y as a function of x"
+    # 'dependent ~ independent'
+plot(snow$inches ~ snow$temp, xlab = expression(paste("Temp ","(",degree,"F)")),
+     ylab = "Snowfall (inches)", pch = 8, col = "purple")
+        ## Use 'expression(paste("text"))' to get symbols like 'degree'
+
+plot(snow$inches ~ snow$temp, xlab = expression(paste("Temp ","(",degree,"F)")),
+     ylab = "Snowfall (inches)", pch = 8, col = "cornflower blue", 
+     main = "Fun with Snow Plots")
+
+
+
+### GGPLOT
+library(tidyverse)
+ggplot(snow, aes(temp,inches)) +
+  geom_point(col="coral2") +
+  theme_minimal ()
+
+
+### More Plots
+ ## Histograms
+hist (snow$inches)
+
+hist(snow$inches, breaks = 10,
+     xlab = "Inches of Snow", ylab = "Frequency",
+     main = "Snowfall", col = "magenta3")
+
+# Q1: What does this histrogram tell us about the snow data? What do you think the 
+  # mean and median are? Use the summary() function: what are the mean and median?
+  # Were you close? Why or why not?
+
+summary(snow$inches)
+
+ ## Strip Charts
+stripchart(snow$inches ~ snow$period, vertical = T)
+    # Fancier stripchart - points jittered so they don't overlap
+  par(bty = "1") #This removes the full box around the plot for a cleaner look
+  stripchart(snow$inches ~ snow$period, vertical = TRUE, 
+             method = "jitter", jitter = 0.2, pch = 1, col = "blue", las = 1)
+
+ # Q2: What information is this stripchart providing versus the histogram.
+  
+  
+ ## Box Plots
+boxplot(snow$inches ~ snow$period)
+
+ # Q3: What do the whiskers tell you? What about the thick black line in the middle?
+
+
+
+# Exercise: Mountains or Sea
+# Dataset = sea.csv
+## QUESTION: What drives central Puget Sound water temperature?
+
+
+sea <- read.csv("Sea.csv")
+
+## Getting the lay of the data.
+head(sea)
+str(sea)
+dim(sea)
+
+
+### Response Variable: central Puget Sound water temperature
+### Predictor Variables:: Coast sea surface temperature, Pacific Decadal Oscillation index, coastal upwelling, and river discharge into Puget Sound in cubic feet per second, and Year.
+
+summary(sea)
+sd(sea$Year)
+sd(sea$CentralPSTemp, na.rm=TRUE)
+sd(sea$CoastSST)
+sd(sea$PDO)
+sd(sea$Upwelling)
+sd(sea$CFS, na.rm=TRUE)
+
+
+## Testing for normality in the response variable.
+hist(sea$CentralPSTemp, breaks = 10)
+# CentralPSTemp is normally distributed with right-side outliers.
+
+## Normality in predictor variables - histograms.
+dev.off()
+par(mfrow = C(4,1))
+
+
+## Visualize with scatterplots.
+
+
+plot(sea$PDO, sea$CentralPSTemp, pch = 15, col = "green4",
+     xlab = "Pacific Decadal Oscillation Index",
+     ylab = expression(paste("Central Puget Sound Temperature", "(", degree, "C)")),
+     main = "PDO Index and Puget Sound Temperature")
+
+plot(sea$CoastSST, sea$CentralPSTemp, pch = 17, col = "blue3",
+     xlab = expression (paste("Coastal Sea Surface Temperature (", degree, "C)")),
+     ylab = expression(paste("Central Puget Sound Temperature", "(", degree, "C)")),
+     main = "Coastal Sea Surface and Central Puget Sound Temperatures")
+
+
+
+## Does central Puget Sound temperature vary differently when coastal sea surface temperatures are higher or lower than the median?
+
+lowSST_sea <- subset(sea, CoastSST >= 9.415)
+highSST_sea <- subset(sea, CoastSST < 9.415)     
+
+## Create a new variable
+# use ifelse statement
+?ifelse
+?cbind
+# find vector making functions in tidyverse - pipe?
+?tidyverse
+# dplyer (sp?)
+# cbind will combine two matrices/vectors by column
+
+
+#dev.off()
+#par(bty = "1")
+#??
+
+boxplot(sea$CentralPSTemp ~ sea$CoastSST>=9.415,
+        names = c("< 9.415","> 9.415"),
+        col = c("turquoise4","coral3"),
+        xlab = expression (paste("Coastal Sea Surface Temperature (",degree, "C)")),
+        ylab = expression (paste("Central Puget Sound Temperature (",degree, "C)")),
+        main = "Central Puget Sound Temperature by
+  High and Low Coastal Sea Surface Temperature")
+
+
+stripchart(sea$CentralPSTemp ~ sea$CoastSST>=9.415, vertical = T,
+           method = "jitter", jitter = 0.2, pch = 15, las = 1,
+           group.names = c("< 9.415","> 9.415"),
+           col = c("orchid4","coral3"),
+           xlab = expression (paste("Coastal Sea Surface Temperature (",degree, "C)")),
+           ylab = expression (paste("Central Puget Sound Temperature (",degree, "C)")),
+           main = "Central Puget Sound Temperature by
+  High and Low Coastal Sea Surface Temperature")
+
+           

@@ -1,0 +1,314 @@
+---
+title: 'ESCI 502: Tidy Data'
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_Tidy_Data/Data')
+```
+
+
+```{r check-wd, include=FALSE}
+getwd()
+```
+
+<br>
+
+## Part 1.
+
+### Dataset errors.
+
+  1.	Month written as full word instead of as an integer in B29, B37, B48, and B70
+
+  2.	Name of month misspelled in B70 (will not be found with find and replace search)
+
+  3.	Column C: Year and Month have been separated into their own columns, but date has been left in MM/DD/YYYY format.
+
+  4.	Date format is different in C11 and C14 
+
+  5.	Station column contains both location and site number (could be separated depending on the actual context of the stations; might be alright as is)
+
+  6.	Depth values, D1, DO, Temp all listed at inconsistent decimal places
+
+  7.	D1 label unclear
+
+  8.	Inconsistent notation for unmeasured values: nd in Time Towed column; NA and blank spaces in Salinity column, both nd and blank spaces in species count columns; one -9999 count in Blackfin.Poacher column 
+
+  9.	-9999 error value in PDO (K103)
+
+  10.	Blank spaces leave ambiguity on if a measurement was taken or not (Salinity and Species Caught columns)
+
+  11.	Notes in random cell at the end of the spreadsheet: not only unclear, but lend some distrust to the entire datasheet with “Species IDs may not be correct.” References another spreadsheet with data not present to be compared with.
+
+  12.	Unlabeled averages included at the bottom of D1, DO, Temp, Salinity, and PDO columns; will be included if run through any analysis; should be separated from the datasheet and included in analysis, not in the raw data.
+
+  13.	Year value in A115 is not correct based on Date for that observation.
+  
+  14. Two columns are present for big skate counts (Big.Skate and Big.skate).
+  
+<br>
+
+### Error Correction.
+
+  1. I replaced any blank spaces, "nd", or "-9999" with NA to be consistent throughout the spreadsheet.
+  
+  2. I copied notes to the Metadata sheet for cleanliness in the data while maintaining any important observations from the field. 
+  
+  3. I aligned data to have equal significant digits depending on the variable and measurements taken.
+  
+  4. I created a column for day and replaced any spelled-out months with integers, and I removed the combined date column. I copied any formula cells I used to determine year, month, and day from the dates, then pasted as values so I could remove the date column without receiving errors.
+  
+  5. I combined the two big skate columns into a single tally.
+  
+  6. I did not exclude any extreme outliers (i.e., counts greater than 900) from the data. It was hard to say if the high counts came from input error or if there really were a couple of days where the field researchers counted a whole lot of fish. I might change my mind if I were doing any analysis, but for data tidying I thought it important to include them for now.
+
+<br>
+
+## Part 2.
+
+### 1. Summary: Temperature and DO
+
+Make a summary table of mean temperature and dissolved oxygen from May through September across years.
+
+```{r Library, include=FALSE}
+library(tidyverse)
+fishdata <- read.csv("fishdata_clean.csv")
+head(fishdata)
+
+library(ggplot2)
+library(PNWColors)
+
+```
+
+```{r TempDO_summary, echo=FALSE}
+fishdata |>
+  group_by(Month)|>
+  drop_na(DO) |>
+  summarize(
+    mean_Temp = mean(Temp),
+    mean_DO = mean(DO))
+
+```
+
+### 2. Plot Slender Sole ~ Temperature.
+Plot the counts of Slender Sole against temperature (Slender sole ~ Temperature).
+
+<br>
+
+I used ggplot to compare slender sole counts to temperature. I used the Sailboat palette from PNWColors with 114 shades and reordered a subsetted, slender sole only dataframe by temperature to include a color gradient from low to high temps.
+
+<br>
+
+```{r Plot_SlenderSole, include=FALSE}
+
+
+fishdata |>
+ggplot(aes(Temp, Slender.Sole)) +
+  geom_point(col="coral3") +
+  theme_minimal() +
+  xlab(expression(paste("Temperature (", degree, "C)"))) +
+  ylab("Slender Sole (individuals)") +
+  ggtitle("Slender Sole Count by Temperature") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r Plot_SlenderSole_palette, echo=FALSE}
+# Finding palette names
+# names(pnw_palettes) 
+
+# Determine the number of data points.
+#fishdata |>
+#  summarize(n = n())
+pal <- pnw_palette("Sailboat", 114)
+names(pnw_palettes)
+# pal
+
+fishdata_SS <- fishdata |>
+  select(Temp, Slender.Sole) |>
+  arrange(Temp)
+# Arranging by Temp creates an ascending order of colors assigned to each point in the plot.
+
+# Double-checking the new table.
+# fishdata_SS
+
+fishdata_SS |>
+ggplot(aes(Temp, Slender.Sole)) +
+  geom_point(col=pal) +
+  theme_minimal() +
+  xlab(expression(paste("Temperature (", degree, "C)"))) +
+  ylab("Slender Sole (individuals)") +
+  ggtitle("Slender Sole Count by Temperature") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+According to the data, slender sole are found in waters ranging in temperature from 7 to 9 degrees C. The majority of slender sole are found in water around 8 degrees C. Most sole counts ranged between 0 and 259, while a few outliers ranged from 500 to over 1000. 
+
+<br>
+
+### 3. Tidy the Data.
+
+Make a new data frame that includes all the environmental and site data (columns A:L, 1:12) and the fish species with 20% frequency of occurrence or more.
+
+<br>
+
+1. Custom function to count the number of days in which a fish was counted.
+```{r tidying_data1}
+present_func <- function(x) sum(x != 0, na.rm = TRUE)
+```
+
+
+```{r tidying_data11, include=FALSE}
+# Comparing with excel values to determine accuracy of code.
+present_func(fishdata$Black.Rockfish)
+sum(fishdata$Black.Rockfish, na.rm=TRUE)
+
+present_func(fishdata$Year)
+sum(fishdata$Year)
+```
+
+2. Custom function to count the total number of days on which data was recorded (excludes days where no data on a particular fish was collected, zero or otherwise; i.e., NA values removed).
+```{r tidying_data2}
+n_func <- function(x) sum(x != "", na.rm = TRUE)
+```
+
+```{r tidying_data21, include=FALSE}
+# Comparing with excel value to determine accuracy.
+n_func(fishdata$Black.Rockfish)
+n_func(fishdata$Year)
+```
+
+3. Custom function to determine the proportion of collections in which a fish was counted.
+```{r tidying_data3}
+freq_func <- function(x) present_func(x)/n_func(x)
+```
+
+```{r tidying_data31, include=FALSE}
+# Comparing with excel value.
+freq_func(fishdata$Black.Rockfish)
+freq_func(fishdata$Year)
+```
+
+4. Using "sapply" function to determine proportion of days in which each variable was counted.
+```{r tidying_data4, echo=FALSE}
+fishdata_freq<-fishdata |>
+  sapply(freq_func)
+fishdata_freq
+
+## For some reason, apply did not work with this custom function, so I had to use sapply but don't entirely understand why it worked instead. The function, when used individually on a column, will calculate the correct proportion, but when applied to the entire dataframe, the present_func is not recording accurate numbers of values that are not zero.
+```
+
+5. From my new proportion table, I saw that only slender sole and water poachers were collected on 20% or more days of the study. I used select to choose all variable columns and only the two fish columns I needed.
+
+
+```{r tidying_data5, echo=FALSE}
+fishdata_over20<- fishdata |>
+  select(c(Year:Avg.Upwelling.Index, Slender.Sole, Warty.Poacher))
+head(fishdata_over20)
+
+dim(fishdata_over20)
+
+```
+The dimensions of my resulting table matches the expected dimensions.
+
+<br>
+
+### 4. Long-Form Tidy Data.
+
+Make your data long-form tidy data.
+
+<br>
+
+I used the gather function to create two columns (species and count) that include the slender sole and warty poacher data.
+
+```{r longform_data, echo=FALSE}
+fishdata_long <- fishdata_over20 |>
+  gather(key = Species, value = Count, Slender.Sole:Warty.Poacher, factor_key = TRUE)
+
+head(fishdata_long)
+dim(fishdata_long)
+```
+The dimensions of my long-form table match the expected dimensions.
+
+<br>
+
+### 5. Fish Counts by Depth.
+
+Plot fish counts by depth for the fish species.
+
+```{r palette2, include=FALSE}
+names(pnw_palettes)
+pal2 <- pnw_palette("Lake", 2)
+pal2
+```
+
+<br>
+
+I used ggplot to compare fish counts to depth, then colored each species using the Lake palette from PNWColors.
+
+<br>
+
+```{r depth_plot, echo=FALSE}
+fishdata_long |>
+  ggplot(aes(Depth, Count, color = Species)) +
+  geom_point() +
+  theme_minimal() +
+  xlab("Depth (fathoms)") +
+  ggtitle("Fish Counts by Depth per Species") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(name = "Species", values = pal2)
+```
+
+<br>
+
+Log-transforming the data reduces the scale and makes points easier to distinguish.
+
+```{r depth_log_transform1, echo=FALSE}
+fishdata_long |>
+  ggplot(aes(Depth, log(Count), color = Species)) +
+  geom_point() +
+  theme_minimal() +
+  xlab("Depth (fathoms)") +
+  ylab("ln(Count)") +
+  ggtitle("Log Fish Counts by Depth per Species") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(name = "Species", values = pal2)
+```
+
+<br>
+
+To remove the effect of log-transforming zero values, I also performed a log(x + c) transformation, where c = 0.5 (one half of lowest non-zero count, 1). I'm not entirely sure that this is the right approach for these data, but in my searches it was a common way to account for lots of zeros.
+
+```{r depth_log_transform2, echo=FALSE}
+fishdata_long |>
+  ggplot(aes(Depth, log(Count + 0.5), color = Species)) +
+  geom_point() +
+  theme_minimal() +
+  xlab("Depth (fathoms)") +
+  ylab("ln(Count)") +
+  ggtitle("Log Fish Counts by Depth per Species") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_manual(name = "Species", values = pal2)
+```
+
+Both slender sole and warty poacher fish are found less frequently in deeper waters than in shallower waters. Warty poachers are found in increasing numbers until approximately 30 fathoms, after which they are found in fairly consistent numbers. Slender sole are found in a wide variety of numbers at various depths, though with greater range in and higher frequencies at shallower depths than in deeper waters.
+
+<br>
+
+Time Taken: This assignment took me about 5 hours in total, maybe a little more. While moving the data from wide form to long form took a good bit of searching, I spent most of the extra time learning R markdown and messing around with palettes.
+
+<br>
+<br>
+<br>
+<br>
+
+
+
+
+
+
+

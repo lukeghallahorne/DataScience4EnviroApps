@@ -1,0 +1,269 @@
+---
+title: "HW Linear Models"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_Linear_Models/Data')
+```
+
+### Problem 1
+
+Evaluate the correlation between sea surface temperature (SST) and the Pacific Decadal Oscillation (PDO).
+
+1a. Plot the data and make a guess.
+
+```{r, include = FALSE}
+library(tidyverse)
+library(GGally)
+library(PNWColors)
+library(RColorBrewer)
+names(pnw_palettes)
+display.brewer.all()
+```
+
+```{r include = FALSE}
+ocean <- read.csv("ocean_indexes.csv")
+head(ocean)
+```
+
+```{r, include=FALSE}
+plot(ocean$SST ~ ocean$PDO)
+```
+
+```{r, echo=FALSE}
+ggplot(data=ocean, aes(PDO, SST)) +
+  geom_point(color = "orchid4") +
+  ggtitle("Pacific Decadal Oscillation vs Sea Surface Temperature") +
+  xlab("Pacific Decadal Oscillation (PDO Index)") +
+  ylab(expression(paste("Sea Surface Temperature (", degree, "C)"))) +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+From just plotting the data, PDO and SST appear to be positively correlated, but with a low r and high variance.
+
+1b. Are these two variables correlated?
+
+Pearson correlation tests assume bivariate normality and random sampling. We can assume random sampling in the data, so I made histograms to test if SST and PDO are normally distributed.
+
+```{r echo=FALSE}
+pal <- pnw_palette("Sunset", 13)
+
+ggplot(data=ocean, aes(PDO), color = PDO) +
+  geom_histogram(binwidth = 0.25) 
+```
+PDO is approximately normal.
+
+```{r echo = FALSE}
+ggplot(data=ocean, aes(SST)) +
+  geom_histogram(binwidth = 0.25)
+```
+SST is also normally distributed, so I used a Pearson Correlation Coefficient test to determine if they are correlated.
+
+```{r}
+cor.test(ocean$PDO, ocean$SST)
+```
+
+Since our r = 0.478 is significantly different from 0 (t = 3.608, p < 0.001), we can see that PDO and SST are positively correlated with each other. This means that as PDO index increases, sea surface temperature increases but with some variance (but PDO does not necessarily cause the change in sea surface temperature). 
+
+<br>
+
+### Problem 2.
+
+"Clams, as largely sessile organisms living within the benthos, have been shown to be good indicators of climate. Like trees, bivalves deposit annual growth rings which can be used to make inference about their living conditions (this is called sclerochronology). So, we have gone to a local clam bed (location classified because I don’t give out my clamming locations to just anyone!) and collected some clams. We brought them back to the lab and measured the growth increments. We only used clams that had a record from at least 1970-2015.
+
+Using the Ocean Indexes data, conduct an analysis (here, a simple linear regression) to see if an indicator of ocean condition, upwelling (UPW), can describe clam growth (cm/yr). The upwelling index used here is from 0 to -50, where negative numbers are indicative of stronger upwelling (more water moving offshore). We know upwelling brings nutrient-rich deep waters to our coast, bringing the raw materials for the phytoplankton clams eat. Given this biological link, we might expect years with strong upwelling to result in higher growth. Again, you will need to subset the data or otherwise call the variables of interest (there are multiple ways to do this)."
+
+```{r echo=FALSE}
+ggplot(data=ocean, aes(UPW, Clam)) +
+  geom_point(color = "orchid4") +
+  xlab("Upwelling") +
+  ylab("Clam Growth") +
+  ggtitle("Upwelling vs Clam Growth") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+
+There appears to be an approximate negative correlation between UPW and clam growth.
+
+```{r}
+cor.test(ocean$UPW, ocean$Clam)
+```
+From the correlation t-test, our r = -0.372 is significantly different from 0 (t = -2.656, p < 0.011) and therefore our variables are negatively correlated.
+
+
+Testing assumptions: Normality
+```{r echo = FALSE}
+ggplot(data = ocean, aes(UPW)) +
+  geom_histogram(binwidth=5)
+```
+
+```{r echo = FALSE}
+ggplot(data = ocean, aes(Clam)) +
+  geom_histogram(binwidth = 0.025)
+```
+
+Both upwelling and clam growth are sufficiently normal to satisfy the assumptions of a linear model.
+
+
+Testing assumptions: Equal Variance
+```{r echo = FALSE}
+par(mfrow=c(1,2))
+boxplot(ocean$Clam, xlab="Clam Growth")
+boxplot(ocean$UPW, xlab="Upwelling")
+```
+
+Clam growth and upwelling have similar variances, allowing us to move forward with a linear model.
+
+Fitting the model:
+```{r include = FALSE}
+ocean <- ocean[order(ocean$UPW),]
+ocean[1:20,]
+```
+
+```{r}
+clam.lm <- lm(Clam ~ UPW, data = ocean)
+summary(clam.lm)
+anova(clam.lm)
+```
+The linear model produces an intercept of 0.0702 and a slope of -0.00165 that is significantly different from 0 (t = -0.2656, p < 0.011). Although the model explains a small proportion of the variance in the data ($R^2$ = 0.119), the model does fit the data well enough ($F$~(1,44)~ = 7.055, p < 0.011). 
+
+
+Diagnostic plots:
+```{r echo = FALSE}
+clam.lm
+par(mfrow=c(1,2))
+plot(clam.lm, which=1:2)
+```
+Residuals appear normally distributed (QQ plot) and have equal variance (non-clumped spread in the residuals vs fitted plot). There are a few outliers identified in the QQ plot (data points 18, 30, and 46).
+
+```{r include=FALSE}
+confint(clam.lm)
+CIs <- predict(clam.lm, se.fit=T, interval = "confidence")
+CIs
+```
+
+```{r echo=FALSE}
+ggplot(ocean, aes(UPW, Clam)) +
+  geom_point(color = "orchid4") +
+  geom_ribbon(aes(ymin = CIs$fit[,2], ymax = CIs$fit[,3]), fill = "lightcoral", alpha = 0.5) +
+  geom_path(aes(UPW, CIs$fit[,1]), linejoin = "round", color = "coral4") +
+  ylab("Clam Growth") +
+  xlab("Upwelling") +
+  ggtitle("Upwelling vs Clam Growth") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+
+
+```
+
+
+```{r include = FALSE}
+plot(ocean$UPW, ocean$Clam, pch = 16)
+lines(ocean$UPW, CIs$fit[,1], lwd = 2, col = "rosybrown")
+lines(ocean$UPW, CIs$fit[,2], lty=2, col="red") 
+lines(ocean$UPW, CIs$fit[,3], lty=2, col="blue")
+```
+
+
+The confidence intervals (shaded area) in the plot show the rough fit of the model to the data ($R^2$ = 0.1186). When upwelling is stronger, clams tend to grow more, and decrease growth as upwelling slows. However, much of the variation in clam growth is not explained by changes in upwelling, as seen by the number of points not contained in the 95% confidence interval.
+
+<br>
+
+### Problem 3.
+
+"Our simple linear model did not have much explanatory power. But we do have additional data and can possibly improve our model fit by adding a variable. Using the same Ocean Indexes data, conduct an analysis (here, a linear regression, potentially with multiple explanatory variables) to see if the indicators of ocean condition: PDO, North Pacific Gyre Oscillation (NPGO), and Upwelling (UPW) can describe clam growth. For simplicity, model the main effects only. Pay attention to what variables you are including–you will need to select the appropriate ones."
+
+```{r echo = FALSE, fig.asp=.4}
+par(mfrow=c(1,3))
+plot(ocean$Clam ~ ocean$PDO, col = "turquoise4", pch = 16, main = "Pacific Decadal Oscillation", xlab = "PDO", ylab = "Clam Growth")
+plot(ocean$Clam ~ ocean$NPGO, col = "orchid4", pch = 16, main = "North Pacific Gyre Oscillation", xlab = "NPGO", ylab = "Clam Growth")
+plot(ocean$Clam ~ ocean$UPW, col = "coral4", pch = 16, main = "Upwelling", xlab = "Upwelling", ylab = "Clam Growth")
+```
+
+PDO appears strongly positively correlated to clam growth, whereas NPGO and UPW appear to have a slight negative correlation with clam growth.
+
+Testing for correlation between our three variables:
+```{r include = FALSE}
+par(mfrow=c(2,2))
+plot(ocean$PDO ~ ocean$NPGO)
+plot(ocean$PDO ~ ocean$UPW)
+plot(ocean$NPGO ~ ocean$UPW)
+
+```
+
+```{r echo = FALSE}
+ocean.sub <- ocean[,c("NPGO", "UPW", "PDO", "Clam")]
+ggpairs(ocean.sub)
+```
+
+```{r include = FALSE}
+cor.test(ocean$PDO, ocean$NPGO)
+cor.test(ocean$PDO, ocean$UPW)
+cor.test(ocean$UPW, ocean$NPGO)
+```
+
+PDO is correlated with NPGO (t = -3.701, p < 0.001, r = -0.487) and upwelling (t = -2.8295, p < 0.001, r = -0.392) but NPGO and upwelling are not correlated (t = -0.314, p < 0.755). There was no correlation between independent variables greater than 0.6, so for our purposes, we can continue with a multivariate linear model. 
+
+We can also see from the plots above that our variables are each normally distributed.
+
+```{r fig.asp=0.5, echo = FALSE}
+par(mfrow=c(1,3))
+boxplot(ocean$PDO, xlab = "PDO")
+boxplot(ocean$NPGO, xlab = "NPGO")
+boxplot(ocean$UPW, xlab = "Upwelling")
+```
+Using boxplots to compare variances, they are equivalent enough to satisfy the assumptions of a linear model.
+
+```{r}
+clam.lm2 <- lm(Clam ~ PDO + NPGO + UPW, data = ocean)
+summary(clam.lm2)
+anova(clam.lm2)
+```
+Including all three variables with no interaction terms, only PDO has a slope significantly different from 0 at 0.067 (t = 20.633, p < 0.001). NPGO and upwelling had no significant slope (t = -0.138, p < 0.891 and t = 0.235, p < 0.815, respectively). The model is a good fit for the data ($R^2$ = 0.941, $F$~(3,42)~ = 240.3, p < 0.001), but only PDO contributed significantly to the model ($F$~(1,42)~ = 720.73, p < 0.001). The most parsimonious model would remove the NPGO and upwelling terms.
+
+NPGO and PDO had a significant interaction in the correlation test, so I refit the model with an interaction term, just to check if it was contributing to the model in the background.
+
+```{r}
+clam.lm3 <- lm(Clam ~ PDO * NPGO + UPW, data = ocean)
+summary(clam.lm3)
+anova(clam.lm3)
+```
+The interaction between PDO and NPGO has neither a significant slope (t = -0.840, p < 0.406) nor contributes to the model ($F$~(1,42)~ = 0.705, p < 0.406). This reaffirms that the best model for clam growth based on these variables would include only PDO.
+
+```{r}
+ocean2 <- ocean[order(ocean$PDO),]
+
+clam.lm4 <- lm(Clam ~ PDO, data = ocean2)
+summary(clam.lm4)
+anova(clam.lm4)
+```
+This model has the highest $R^2$ of our options at 0.9436 ($F$~(1,44)~ = 753.2, p < 0.001) and is the most parsimonious (fewest parameters). It follows that PDO explains the majority of the variation in clam growth of our data set. 
+
+```{r include = FALSE}
+confint(clam.lm4)
+CIs2 <- predict(clam.lm4, se.fit=T, interval = "confidence")
+CIs2
+
+```
+
+
+```{r echo = FALSE}
+ggplot(ocean2, aes(PDO, Clam)) +
+  geom_point(color = "orchid4") +
+  geom_ribbon(aes(ymin = CIs2$fit[,2], ymax = CIs2$fit[,3]), fill = "lightcoral", alpha = 0.5) +
+  geom_path(aes(PDO, CIs2$fit[,1]), linejoin = "round", color = "coral4") +
+  ylab("Clam Growth") +
+  ggtitle("Clam Growth by PDO") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+```
+
+
+
+
+
+
