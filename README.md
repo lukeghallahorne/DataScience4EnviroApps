@@ -4,18 +4,18 @@
 Work related to the Data Science for Environmental Applications certificate program through WWU. All work was completed using Rstudio, primarily with packages within the `tidyverse` group of libraries. Use the links here to see the Rmarkdown output for the various projects completed during this program.
 
 ## Table of Contents
-* Statistics Coursework:
+* [Statistics Coursework](#statistics-coursework):
   * [Applied Statistics for Environmental Applications](#applied-statistics)
   * [Multivariate Statistics](#multivariate-statistics)
   * [Spatial Analysis](#spatial-analysis)
 
-* Data Science Seminars:
+* [Data Science Seminars](#data-science-seminars):
   * [Data Visualization](#data-visualization)
   * [Machine Learning](#machine-learning)
   * [ShinyApp Development](#shinyapp-development)
 
 ## Statistics Coursework
-###
+### Applied Statistics for Environmental Applications
 
 ## Data Science Seminars
 ### Data Visualization
@@ -28,9 +28,18 @@ This seminar focused on different aspects of good data visualization practices. 
 * Geospatial Data: [rpubs.com/lukeghallahorne/dataviz_geodata](https://rpubs.com/lukeghallahorne/dataviz_geodata)
 * Uncertainty: [rpubs.com/lukeghallahorne/dataviz_uncertainty](https://rpubs.com/lukeghallahorne/dataviz_uncertainty)
 
-## Machine Learning
+### Machine Learning
 
 * Bootstrapping: [rpubs.com/lukeghallahorne/ml_bootstrap](https://rpubs.com/lukeghallahorne/ml_bootstrap)
+* Permutations: [rpubs.com/lukeghallahorne/ml_permutation](https://rpubs.com/lukeghallahorne/ml_permutation)
+* Cross Validation: [rpubs.com/lukeghallahorne/ml_crossvalidation](https://rpubs.com/lukeghallahorne/ml_crossvalidation)
+* k-Nearest Neighbors: [rpubs.com/lukeghallahorne/ml_knn](https://rpubs.com/lukeghallahorne/ml_knn)
+* Decision Trees: [rpubs.com/lukeghallahorne/ml_decisiontrees](https://rpubs.com/lukeghallahorne/ml_decisiontrees)
+* Neural Networks: [rpubs.com/lukeghallahorne/ml_neuralnetworks](https://rpubs.com/lukeghallahorne/ml_neuralnetworks)
+* Improving Model Learning: [rpubs.com/lukeghallahorne/ml_modellearning](https://rpubs.com/lukeghallahorne/ml_modellearning)
+
+### ShinyApp Development
+
 
 
 [Homepage](https://lukeghallahorne.github.io/)
