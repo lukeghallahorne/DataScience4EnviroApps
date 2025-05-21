@@ -1,5 +1,6 @@
 # Data Science for Environmental Applications
 #### *Luke Ghallahorne*
+[Homepage](https://lukeghallahorne.github.io/)
 
 Work related to the Data Science for Environmental Applications certificate program through WWU. All work was completed using Rstudio, primarily with packages within the `tidyverse` group of libraries. Use the links here to see the Rmarkdown output for the various projects completed during this program.
 
@@ -16,6 +17,8 @@ Work related to the Data Science for Environmental Applications certificate prog
 
 ## Statistics Coursework
 ### Applied Statistics for Environmental Applications
+
+* 
 
 ## Data Science Seminars
 ### Data Visualization
@@ -42,4 +45,4 @@ This seminar focused on different aspects of good data visualization practices. 
 
 
 
-[Homepage](https://lukeghallahorne.github.io/)
+Last Edited: 21 May 2025 LG
