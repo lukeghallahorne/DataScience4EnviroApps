@@ -20,3 +20,5 @@ This seminar focused on different aspects of good data visualization practices. 
 
 * Bootstrapping: [rpubs.com/lukeghallahorne/ml_bootstrap](https://rpubs.com/lukeghallahorne/ml_bootstrap)
 
+
+[Homepage](https://lukeghallahorne.github.io/)
