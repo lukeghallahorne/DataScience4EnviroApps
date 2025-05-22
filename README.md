@@ -2,7 +2,7 @@
 #### *Luke Ghallahorne*
 [Homepage](https://lukeghallahorne.github.io/)
 
-Work related to the Data Science for Environmental Applications certificate program through WWU. All work was completed using Rstudio, primarily with packages within the `tidyverse` group of libraries. Use the links here to see the Rmarkdown output for the various projects completed during this program.
+Work related to the Data Science for Environmental Applications certificate program through WWU. All work was completed using Rstudio, with an emphasis on packages within the `tidyverse` group of libraries for data wrangling and visualization. Use the links here to see the Rmarkdown output for the various projects completed during this program.
 
 ## Table of Contents
 * [Data Science Seminars](#data-science-seminars):
