@@ -1,0 +1,12 @@
+name: Oly_Dispersal_Maps_v1
+title: Oly_Dispersal_Maps_v1
+username: lukeghallahorne
+account: lukeghallahorne
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14803854
+bundleId: 10321569
+url: https://lukeghallahorne.shinyapps.io/Oly_Dispersal_Maps_v1/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
