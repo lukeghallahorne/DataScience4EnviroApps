@@ -17,6 +17,7 @@ Work related to the Data Science for Environmental Applications certificate prog
 
 ## Data Science Seminars
 ### Data Visualization
+WWU | ESCI 599 | Data Science Seminar - Data Visualization (2 credits)
 This seminar focused on different aspects of good data visualization practices. As such, the data used were sourced from R packages or provided by Dr. Andy Bunn (WWU) as good examples of different visualization approaches.
 
 * Visualizing Amounts: [rpubs.com/lukeghallahorne/dataviz_amounts](https://rpubs.com/lukeghallahorne/dataviz_amounts)
@@ -27,7 +28,7 @@ This seminar focused on different aspects of good data visualization practices. 
 * Uncertainty: [rpubs.com/lukeghallahorne/dataviz_uncertainty](https://rpubs.com/lukeghallahorne/dataviz_uncertainty)
 
 ### Machine Learning
-
+WWU | ESCI 599 | Data Science Seminar - Machine Learning (2 credits)
 * Bootstrapping: [rpubs.com/lukeghallahorne/ml_bootstrap](https://rpubs.com/lukeghallahorne/ml_bootstrap)
 * Permutations: [rpubs.com/lukeghallahorne/ml_permutation](https://rpubs.com/lukeghallahorne/ml_permutation)
 * Cross Validation: [rpubs.com/lukeghallahorne/ml_crossvalidation](https://rpubs.com/lukeghallahorne/ml_crossvalidation)
@@ -36,8 +37,14 @@ This seminar focused on different aspects of good data visualization practices. 
 * Neural Networks: [rpubs.com/lukeghallahorne/ml_neuralnetworks](https://rpubs.com/lukeghallahorne/ml_neuralnetworks)
 * Improving Model Learning: [rpubs.com/lukeghallahorne/ml_modellearning](https://rpubs.com/lukeghallahorne/ml_modellearning)
 
+### ShinyApp Development
+WWU | ESCI 599 | Data Science Seminar - ShinyApp Development (2 credits)
+* Prototype App:
+* Olympia oyster transport Mapping Application: (in progress)
+
 ## Statistics Coursework
 ### Applied Statistics in Environmental Science
+WWU | ESCI 502 | Applied Statistics in Environmental Science (4 credits)
 
 * Tidy Data: [rpubs.com/lukeghallahorne/esci502_tidydata](https://rpubs.com/lukeghallahorne/esci502_tidydata)
 * Linear Models: [rpubs.com/lukeghallahorne/esci502_lm](https://rpubs.com/lukeghallahorne/esci502_lm)
@@ -48,17 +55,29 @@ This seminar focused on different aspects of good data visualization practices. 
 * Final Synthesis: [rpubs.com/lukeghallahorne/esci502_final](https://rpubs.com/lukeghallahorne/esci502_final)
 
 ### Multivariate Statistics
+WWU | ESCI 503 | Multivariate Statistics (4 credits)
 
 * Graphing Multivariate Data: [rpubs.com/lukeghallahorne/esci503_graphing](https://rpubs.com/lukeghallahorne/esci503_graphing)
 * Box's M and MANOVA: [rpubs.com/lukeghallahorne/esci503_boxm_manova](https://rpubs.com/lukeghallahorne/esci503_boxm_manova)
 * Distances, Dissimilarity, and PERMANOVA: [rpubs.com/lukeghallahorne/esci503_permanova](https://rpubs.com/lukeghallahorne/esci503_permanova)
 * Principle Components Analysis (PCA): [rpubs.com/lukeghallahorne/esci503_pca](https://rpubs.com/lukeghallahorne/esci503_pca)
+* Midterm Synthesis: [rpubs.com/lukeghallahorne/esci503_midterm](https://rpubs.com/lukeghallahorne/esci503_midterm)
 * Clustering: [rpubs.com/lukeghallahorne/esci503_clustering](https://rpubs.com/lukeghallahorne/esci503_clustering)
 * Principle Coordinates Analysis (PCoA): [rpubs.com/lukeghallahorne/esci503_pcoa](https://rpubs.com/lukeghallahorne/esci503_pcoa)
-* 
+* Fitting Variables: [rpubs.com/lukeghallahorne/esci503_fittingvariables](https://rpubs.com/lukeghallahorne/esci503_fittingvariables)
+* Final Synthesis: [rpubs.com/lukeghallahorne/esci503_final](https://rpubs.com/lukeghallahorne/esci503_final)
 
-### ShinyApp Development
+### Spatial Analysis
+WWU | ESCI 505 | Spatial Analysis (4 credits)
 
+* Intro to Mapping - Mt. Baker Map: [rpubs.com/lukeghallahorne/esci505_mtbakermap](https://rpubs.com/lukeghallahorne/esci505_mtbakermap)
+* Point Patterns: [rpubs.com/lukeghallahorne/esci505_pointpatterns](https://rpubs.com/lukeghallahorne/esci505_pointpatterns)
+* Autocorrelation: [rpubs.com/lukeghallahorne/esci505_autocorrelation](https://rpubs.com/lukeghallahorne/esci505_autocorrelation)
+* Deterministic Interpolation: [rpubs.com/lukeghallahorne/esci505_interpolation](https://rpubs.com/lukeghallahorne/esci505_interpolation)
+* Midterm Synthesis: [rpubs.com/lukeghallahorne/esci505_midterm](https://rpubs.com/lukeghallahorne/esci505_midterm)
+* Kriging: [rpubs.com/lukeghallahorne/esci505_kriging](https://rpubs.com/lukeghallahorne/esci505_kriging)
+* Spatial Regression: [rpubs.com/lukeghallahorne/esci505_regression](https://rpubs.com/lukeghallahorne/esci505_regression)
+* Final Synthesis: [rpubs.com/lukeghallahorne/esci505_final](https://rpubs.com/lukeghallahorne/esci505_final)
 
 
 Last Edited: 21 May 2025 LG
