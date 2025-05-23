@@ -47,6 +47,15 @@ This seminar focused on different aspects of good data visualization practices. 
 * Generalized Linear Models (GLMs): [rpubs.com/lukeghallahorne/esci502_glm](https://rpubs.com/lukeghallahorne/esci502_glm)
 * Final Synthesis: [rpubs.com/lukeghallahorne/esci502_final](https://rpubs.com/lukeghallahorne/esci502_final)
 
+### Multivariate Statistics
+
+* Graphing Multivariate Data: [rpubs.com/lukeghallahorne/esci503_graphing](https://rpubs.com/lukeghallahorne/esci503_graphing)
+* Box's M and MANOVA: [rpubs.com/lukeghallahorne/esci503_boxm_manova](https://rpubs.com/lukeghallahorne/esci503_boxm_manova)
+* Distances, Dissimilarity, and PERMANOVA: [rpubs.com/lukeghallahorne/esci503_permanova](https://rpubs.com/lukeghallahorne/esci503_permanova)
+* Principle Components Analysis (PCA): [rpubs.com/lukeghallahorne/esci503_pca](https://rpubs.com/lukeghallahorne/esci503_pca)
+* Clustering: [rpubs.com/lukeghallahorne/esci503_clustering](https://rpubs.com/lukeghallahorne/esci503_clustering)
+* Principle Coordinates Analysis (PCoA): [rpubs.com/lukeghallahorne/esci503_pcoa](https://rpubs.com/lukeghallahorne/esci503_pcoa)
+* 
 
 ### ShinyApp Development
 
