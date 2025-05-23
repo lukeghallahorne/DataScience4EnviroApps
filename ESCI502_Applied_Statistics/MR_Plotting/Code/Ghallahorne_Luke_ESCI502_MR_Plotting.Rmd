@@ -1,0 +1,435 @@
+---
+title: "Multiple Regression Plotting and Interactions"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_MR_Plotting')
+```
+
+## Prelude.
+Multiple linear regression comes with several complicating factors, not the least of which is interaction effects. We also have the need to isolate certain variables and figure out what their effect is on the response variable. We left off on this at the end of the last lab. We will tackle both here, starting with interaction effects.
+
+### Interaction Effects.
+Understanding an interaction effect in a linear regression model is usually difficult when using just the basic output tables and looking at the coefficients. We can include an interaction effect in our model and see if it is significant, but visualizing that effect is a different story. There are now packages that help with interpretation. The interactions package provides several functions that can help analysts probe more deeply.
+
+The tools described here require at least one variable to be continuous. A separate vignette describes cat_plot, which handles the plotting of interactions in which all the focal predictors are categorical variables.
+
+First, we use example data from state.x77 that is built into R. We will fit a model of Income (per capita) as a function of some predictors (here, illiteracy, murder rate, and HS graduation rate) as we’ve done before, but introduce some new tricks to view the output. Note the symbols used: Illiteracy*Murder, means we include the main effects of Illiteracy and Murder, as well as the interaction between the two, and we include HS Grad as a variable too. The backticks around HS Grad (HS Grad) are put there because it’s a non-syntactic name (in this case, it has a space which is not allowed).
+
+```{r library, include = FALSE}
+library(jtools)
+library(interactions)
+library(tidyverse)
+library(car)
+library(effects)
+```
+
+```{r data, echo = FALSE}
+states <- as.data.frame(state.x77)
+fiti <- lm(Income ~ Illiteracy * Murder + `HS Grad`, data = states)
+
+summary(fiti)
+```
+We see that illiteracy is barely non-sig. for slope, but the other variables have slopes sig. diff. from 0.
+
+```{r}
+anova(fiti)
+```
+
+The anova shows us that all variables are contributing to the explanation of variance, except Murder. Yet, the interaction is still sig.
+
+```{r}
+plot(states$Income~states$Murder)
+```
+If we plot this, we see there is no obvious relationship.
+
+```{r}
+#Let's try a new function for summarizing model output
+summ(fiti)
+```
+
+Our interaction term is significant, suggesting some more probing is warranted to see what’s going on. It’s worth recalling that you shouldn’t focus too much on the main effects of terms included in the interaction since they are conditional on the other variable(s) in the interaction being held constant at 0.
+
+### Plotting Interactions.
+
+A versatile, and oftentimes most interpretable, method for understanding interaction effects is via plotting. The package interactions provides interact_plot as a relatively pain-free method to get good-looking plots of interactions using ggplot2 on the backend.
+
+Keep in mind that the default behavior of interact_plot is to mean-center all continuous variables not involved in the interaction so that the predicted values are more easily interpreted, i.e., you are holding other variables constant (here, at their mean) while you look at the effects of the variables of interest. You can disable this by adding centered = “none”. You can choose specific variables by providing their names in a vector to the centered argument. Look up the arguments for the function interact_plot in the help before proceeding.
+
+```{r include = FALSE}
+# ?interact_plot
+```
+
+#### 1. What do the arguments mean in the interact_plot() code below:
+```{r}
+interact_plot(fiti, pred = Illiteracy, modx = Murder, plot.points = TRUE)
+```
+"fiti" is our linear regression model function.
+"pred = Illiteracy" assigns the predictor variable as being Illiteracy.
+"modx = Murder" calls out Murder as the variable that will be moderated to different levels in the interaction, to see how the model is affected.
+"plot.points = TRUE" ensures that the actual points are plotted as well as the model lines, colored by the value of the moderator variable.
+
+
+By default, with a continuous moderator (here, Murder) you get three lines: 1 standard deviation above and below the mean and the mean itself. If you specify modx.values = “plus-minus”, the mean of the moderator is not plotted, just the two +/- SD lines. You may also choose “terciles” to split the data into three equal-sized groups, representing the upper, middle, and lower thirds of the distribution of the moderator, and get the line that represents the median of the moderator within each of those groups.
+
+If your moderator is a factor, each level will be plotted and you should leave modx.values = NULL, the default. Here is an example using the built in iris data we’ve used before.
+
+```{r}
+fitiris <- lm (Petal.Length ~ Petal.Width * Species, data = iris)
+interact_plot(fitiris, pred = Petal.Width, modx = Species, plot.points = TRUE)
+```
+
+#### 2. Review what you have read about interaction effects and describe how you would interpret the two plots you just made, one with the States data dn the other with the Iris data.
+
+"Here we see that the relationship between mpg and car wt is variable by cylinders. I know virtually nothing about cars, but more cylinders typically means more gas, although, here we can see that at some level of wt (around 4800 lbs), heavy vehicles are more fuel efficient when they have more cylinders. Compare this output to what you saw in the tree example (volume~ht*girth). Similar, right? Here we were able to provide levels of cyl over which to predict, which makes the plot more relevant."
+
+<br>
+
+From the plot with the States data, we see an interacting effect between murder rate and illiteracy. When murder is low (1 SD below the mean), income increases as illiteracy increases. However, when murder rates are high (1 SD above the mean), increasing illiteracy decreases income. This shows that when illiteracy is below a certain point (~ 1.4), murder rate has a positive effect on income. Beyond that point, increased murder rate has a negative impact on income.
+
+In the Iris data, we can see an interaction between petal width and species, but only for versicolor and virginica species. Setosa petal length is predicted well by petal width, but for versicolor and virginica species, species and petal width predict petal length. This suggests that versicolor and virginica irises have other influencing factors that are determining petal length as well as petal width.
+
+### Plotting partial residuals in multiple regression.
+
+In more complex regressions, plotting the observed data can sometimes be relatively uninformative because the points seem to be all over the place when plotting the observed values with only one of many predictors, especially if it is one without a strong relationship.
+
+You’ll recall from last lab, we used the cars data and went through a rather laborious process to get the partial effects using residuals. The process is fitting the full model, fitting each univariate model (including models of the predictors, x1~x2 and x2~x1), and pulling the residuals from all. I leave the code here for you to explore. The output plots are nice examples.
+
+```{r}
+#Setting up the data
+mtcars_added_variable_plots <- mtcars
+model_wt_and_cyl <- lm(mpg ~ cyl + wt, data = mtcars)
+model_wt <- lm(mpg ~ wt, data = mtcars_added_variable_plots)
+mtcars_added_variable_plots$wt_residuals <- residuals(model_wt) 
+model_cyl <- lm(mpg ~ cyl, data = mtcars_added_variable_plots)
+mtcars_added_variable_plots$cyl_residuals <- residuals(model_cyl) 
+model_wt_against_cyl <- lm(wt ~ cyl, data = mtcars_added_variable_plots)
+mtcars_added_variable_plots$wt_against_cyl_residuals <- residuals(model_wt_against_cyl) 
+model_cyl_against_wt <- lm(cyl ~ wt, data = mtcars_added_variable_plots)
+mtcars_added_variable_plots$cyl_against_wt_residuals <- residuals(model_cyl_against_wt) 
+```
+
+```{r}
+one <- ggplot(mtcars_added_variable_plots, aes(x = cyl_against_wt_residuals, y = wt_residuals)) +
+  geom_point() + geom_smooth(method = 'lm', color = '#e76254') +
+    labs(title = "Mtcars", subtitle = "Partial Regression: mpg ~ wt + cyl") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(plot.subtitle = element_text(hjust = 0.5)) +
+  labs(caption = "holding wt constant") +
+  xlab("Cylinder \n (cyl_against_wt_residuals)") +
+  ylab("MPG \n (wt_residuals)")
+one
+```
+
+```{r}
+two <- ggplot(mtcars_added_variable_plots, aes(x = wt_against_cyl_residuals, y = cyl_residuals)) +
+  geom_point() + geom_smooth(method = 'lm', color = '#ef8a47') +
+  labs(title = "Mtcars", subtitle = "Partial Regression: mpg ~ wt + cyl") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  theme(plot.subtitle = element_text(hjust = 0.5)) +
+  labs(caption = "holding cyl constant") +
+  xlab("Weight \n (wt_against_cyl_residuals)") +
+  ylab("MPG \n (cyl_residuals)")
+two
+```
+And we can do it a simpler way using the car package.
+
+```{r}
+c3<-lm(mpg~cyl+wt, data=mtcars)
+avPlots(c3)
+```
+##### New Function.
+I hunted around for some new means for doing this and the interactions package seems to be useful.
+
+For an example, let’s take a look at a model using a transformed version of the mtcars data. We will use the mpg dataset predicting the city miles per gallon (cty) based on several variables, including model year, type of car, fuel type, drive type, and an interaction between engine displacement (displ) and number of cylinders in the engine (cyl). Use str() to figure out what form all the variables are in within the dataset.
+
+```{r}
+str(mtcars)
+```
+
+
+Now that you know what’s in the dataset, let’s take a look at the regression output associated with the model below.
+
+```{r}
+data(cars)
+fitc <- lm(cty ~ year + cyl * displ + class + fl + drv, data = mpg)
+summary(fitc)
+summ(fitc)
+```
+You’ll note from the output that class, fuel type, and drive train are all categorical predictors. As such there is a coefficient estimated for each level of the categorical predictor, relative to the first level of that predictor!
+
+Let’s look at the interaction plot, since we now know how to do that:
+
+```{r}
+interact_plot(fitc, pred = displ, modx = cyl, plot.points = TRUE,
+              modx.values = c(4, 5, 6, 8))
+```
+
+Hmm, doesn’t that look…bad? You can kind of see the pattern of the interaction, but the predicted lines don’t seem to match the data very well. But we included a lot of variables besides cyl and displ in this model and they may be responsible for some of this variation. Remember, to make this plot, we are not using the other variables.
+
+Here is where we really need partial residual plots–they are designed to help with deciphering complex model visualizations. You can learn more about the technique and theory in Fox and Weisberg (2018). Another place to generate partial residual plots is in Fox’s effects package.
+
+Using the same function and the argument partial.residuals = TRUE what is plotted instead is the observed data with the effects of all the control variables accounted for. In other words, the value cty for the observed data is based only on the values of displ, cyl, and the model error. The variables class, fl, and drv are held constant, but we allow the variables in the plot to vary across their ranges. Let’s take a look.
+
+```{r}
+interact_plot(fitc, pred = displ, modx = cyl, partial.residuals = TRUE,
+              modx.values = c(4, 5, 6, 8))
+```
+
+Compare this to the plot above.
+
+By plotting the partial residual points, the partial regression lines fit the data much better. We can see there is a shift in city miles per gallon at about 5 displacement from fewer cylinders to more cylinders being more efficient.
+
+<br>
+
+Now we can understand how the observed data and the model relate to each other much better. One insight is how the model really underestimates the values at the low end of displacement and cylinders. You can also see how much the cylinders and displacement seem to be correlated each other, which makes it difficult to say how much we can learn from this kind of model.
+
+### Confidence Intervals
+
+There seemed to be some messy confidence intervaals in the previous HW. Let’s try using a different method, using this same function interact_plot.
+
+Another way to get a sense of the precision of the estimates from you model is by plotting confidence bands. To get started, just set interval = TRUE. To decide how wide the confidence interval should be, express the percentile as a number, e.g., int.width = 0.8 corresponds to an 80% interval.
+
+```{r}
+#For the Income response var.
+interact_plot(fiti, pred = Illiteracy, modx = Murder, interval = TRUE,
+              int.width = 0.8)
+```
+
+```{r}
+#For the mpg
+interact_plot(fitc, pred = displ, modx = cyl, interval = TRUE,
+              modx.values = c(4, 5, 6, 8))
+```
+
+## HW
+For HW you will use the dataset Bugs. It includes a response variable: insect species counts/m^2, and 3 predictors: precipitation (inches/yr), site (3 levels), temperature (deg. C).
+
+### 3. Fit a model and explore the interaction(s) and partial regression plots
+
+Fit a model of Species Counts as a function of the main effects (temp, precip, and site) plus the interaction between site and temperature. Whether or not your interaction is significant, make an interaction plot for the variables you included in the interaction term. Explore the partial regression plots associated with your model and present one of bug counts and temperature with site as the third variable, and one of bug counts and precipitation with site as a third variable.
+
+Using model selection, identify the most supported model(s). Using the best model, make predictions using predict() and plot the predicted bug counts as a function of precipitation.
+
+Interpret your findings using appropriate statistical inference.
+
+<br>
+
+```{r include = FALSE}
+bugs <- read.csv("C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_MR_Plotting/bugs.csv")
+str(bugs)
+```
+
+
+1. Assessing assumptions.
+
+```{r echo = FALSE, fig.asp = 0.4}
+par(mfrow=c(1,3))
+hist(bugs$SpeciesCount)
+hist(bugs$Precipitation)
+hist(bugs$Temperature)
+```
+```{r echo = FALSE, fig.asp = 0.4}
+par(mfrow=c(1,3))
+boxplot(bugs$SpeciesCount, xlab = "Species Count")
+boxplot(bugs$Precipitation, xlab = "Precipitation")
+boxplot(bugs$Temperature, xlab = "Temperature")
+```
+From the histograms and boxplots of the continuous variables, species count, precipitation, and temperature are normally distributed and have roughly equal variance.
+
+2. Fit the model.
+```{r}
+bugs.lm <- lm(SpeciesCount ~ Precipitation + Temperature * Site, data = bugs)
+summary(bugs.lm)
+summ(bugs.lm)
+```
+Precipitation and temperature are significant predictors of species count ($t = 20.47, p < 0.001$ and $t = 2.294, p < 0.0241$, respectively). Neither site nor the interaction between site and temperature contributed significantly.
+
+```{r echo = FALSE}
+interact_plot(bugs.lm, pred = Temperature, modx = Site, interval = TRUE, int.width = 0.95, plot.points = TRUE, x.label = "Temperature (deg C)", y.label = "Species Count", main.title = "Temperature and Site Interaction Effects on Species Count")
+```
+
+There is evidence for an interaction between site and temperature as the slopes of the lines differ and they intersect. However, there is a wide spread of points outside the confidence intervals for all three sites. I made an interaction plot of the partial residuals as well to better visualize how the other variables are influencing the model.
+
+```{r}
+interact_plot(bugs.lm, pred = Temperature, modx = Site, interval = TRUE, int.width = 0.95, partial.residuals = TRUE, x.label = "Temperature (deg C)", y.label = "Species Count", main.title = "Temperature and Site Interaction Effects on Species Count (Residuals)")
+```
+
+The partial regressions by site of temperature fit the data much better when the residuals are plotted, although the south site still has a great deal of spread beyond the confidence intervals of the model. We can much more clearly see the intersection of the north and west sites, showing there is some interacting effect of temperature and site.
+
+
+To visualize whether any interaction existed between precipitation and site, I made another partial regression plot.
+
+```{r}
+interact_plot(bugs.lm, pred = Precipitation, modx = Site, interval = TRUE, int.width = 0.95, plot.points = TRUE, x.label = "Precipitation (inches/yr)", y.label = "Species Count", main.title = "Precipitation and Site Interaction Effects on Species Count")
+```
+
+```{r}
+interact_plot(bugs.lm, pred = Precipitation, modx = Site, interval = TRUE, int.width = 0.95, partial.residuals = TRUE, x.label = "Precipitation (inches/yr)", y.label = "Species Count", main.title = "Precipitation and Site Interaction Effects on Species Count (Residuals)")
+```
+
+We can see from the parallel lines for each site that the slope of the precipitation partial regression does not change as site changes, so there is no significant interaction between them.
+
+
+```{r fig.asp = 1, echo = FALSE}
+avPlots(bugs.lm)
+## this was referenced in the tutorial but it's unclear how it is more/less useful than the interaction plots. Excluded from final homework.
+```
+
+By making added-variable plots for each variable (holding the others constant), we can visualize how precipitation has a strong impact on species count, temperature has a moderate impact, and site has a minimal slope depending on the site considered (each is compared to the North site as a standard). Temperature-site interactions can also be shown to have little influence.
+
+3. Model Selection
+
+First I created models removing the interaction, then sequentially removing a variable.
+
+```{r results = FALSE}
+bugs.lmPTS <- lm (SpeciesCount ~ Precipitation + Temperature + Site, data = bugs)
+summary(bugs.lmPTS)
+```
+
+
+```{r results = FALSE}
+bugs.lmPT <- lm (SpeciesCount ~ Precipitation + Temperature, data = bugs)
+summary(bugs.lmPT)
+```
+
+```{r results = FALSE}
+bugs.lmPS <- lm(SpeciesCount ~ Precipitation + Site, data = bugs)
+summary(bugs.lmPS)
+```
+
+```{r results = FALSE}
+bugs.lmTS <- lm(SpeciesCount ~ Temperature + Site, data = bugs)
+summary(bugs.lmTS)
+```
+
+```{r results = FALSE}
+bugs.lmP <- lm(SpeciesCount ~ Precipitation, data = bugs)
+summary(bugs.lmP)
+```
+
+```{r results = FALSE}
+bugs.lmT <- lm(SpeciesCount ~ Temperature, data = bugs)
+summary(bugs.lmT)
+```
+```{r}
+AIC(bugs.lm, bugs.lmPTS, bugs.lmPT, bugs.lmPS, bugs.lmTS, bugs.lmP, bugs.lmT)
+```
+
+```{r}
+summary(bugs.lm)
+```
+
+```{r}
+summary(bugs.lmPTS)
+```
+
+
+
+I made models associated with each combination of variables, successively dropping one, then ran an AIC to compare goodness-of-fit. The original model ($SpeciesCount \sim Precipitation + Temperature * Site$) as a slightly higher AIC than the model with all three variables but no interaction term. Comparing the $R^2$ values of each model ($R^2 = 0.828, F_{(6,93)} = 80.58, p < 0.001$ for the original, $R^2 = 0.830, F_{(4,95)} = 121.9, p < 0.001$ without the interaction), the interactionless model does explain a small fraction more of the variation in species count, even when accounting for $R^2$ inflation using adjusted $R^2$ values. Interestingly, however, when there is an interaction term in the model, sites by themselves are not significant, but when no interaction is included, site becomes significant.
+
+
+Hence, my final model is:
+
+$$Species Count \sim Precipitation + Temperature + Site $$
+
+4. Assessing model fit.
+
+Diagnostic plots:
+
+```{r fig.asp=1}
+par(mfrow=c(2,2))
+plot(bugs.lmPTS)
+```
+
+There are a few points - notably points 21, 22, and 26 - that appear to be skewing the model. Overall, it appears the residuals are normally distributed, with some tailedness in the QQ plot on the lower end, and the plotted residuals show a mostly even spread. The model fits the data well ($F_{(4,95)} = 121.9, p < 0.001$) and explains a large proportion of the variance in the data ($R^2 = 0.830$).
+
+5. Checking the model with new data.
+
+```{r include = FALSE}
+#This didn't pan out like I thought it would so I excluded it from the final draft.
+
+bugs_added_variable_plots <- bugs
+
+#bugs.lmPTS
+
+#bugs.lmP
+bugs_added_variable_plots$P_residuals <- residuals(bugs.lmP)
+
+#bugs.lmT
+bugs_added_variable_plots$T_residuals <- residuals(bugs.lmT)
+
+model_S <- lm(SpeciesCount ~ Site, data = bugs_added_variable_plots)
+bugs_added_variable_plots$S_residuals <- residuals (model_S)
+
+model_T_against_P <- lm(Temperature ~ Precipitation, data = bugs_added_variable_plots)
+bugs_added_variable_plots$T_against_P_residuals <- residuals(model_T_against_P)
+
+model_P_against_T <- lm(Precipitation ~ Temperature, data = bugs_added_variable_plots)
+bugs_added_variable_plots$P_against_T_residuals <- residuals(model_P_against_T)
+
+model_T_against_S <- lm(Temperature ~ Site, data = bugs_added_variable_plots)
+bugs_added_variable_plots$T_against_S_residuals <- residuals(model_T_against_S)
+
+model_P_against_S <- lm(Precipitation ~ Site, data = bugs_added_variable_plots)
+bugs_added_variable_plots$P_against_S_residuals <- residuals(model_P_against_S)
+```
+
+
+
+
+```{r results = FALSE}
+predicted_bug<-predict(bugs.lmPTS)
+print(predicted_bug)
+```
+
+Plotting predicted counts as a function of precipitation.
+
+```{r echo = FALSE}
+plot(bugs$Precipitation, predicted_bug)
+
+```
+Using correlation test to determine relationship:
+```{r}
+cor.test(bugs$Precipitation, predicted_bug)
+```
+
+
+
+```{r include = FALSE}
+plot(bugs$Temperature, predicted_bug)
+cor.test(bugs$Temperature, predicted_bug)
+```
+
+```{r include = FALSE}
+bugs <- bugs[order(bugs$Precipitation),]
+predicted_bug<-predict(bugs.lmPTS)
+predicted_bug <- predicted_bug[order(predicted_bug)]
+predicted_bug
+```
+
+
+```{r}
+ggplot(data = bugs, aes(Precipitation, SpeciesCount)) +
+  geom_point() +
+  geom_smooth(aes(Precipitation, predicted_bug), se = FALSE) +
+  ggtitle("Species Count by Precipitation")+
+  xlab("Precipitation (inches/yr)")
+```
+
+From the correlation, we can see that the model produces predicted values that are highly correlated with precipitation ($t=47.74, p < 0.001, r = 0.979$). 
+
+In conclusion, bug species count is predicted by precipitation, temperature, and site ($F_{(4,95)} = 121.9, p < 0.001$). As precipitation and temperature increase, bug species counts increase. From our data, there is no significant interaction between temperature and site, though site had a significant impact when considered in the model alone.
+

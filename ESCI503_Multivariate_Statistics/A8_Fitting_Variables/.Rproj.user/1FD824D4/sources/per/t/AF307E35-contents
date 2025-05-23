@@ -1,0 +1,880 @@
+---
+title: "ESCI503 Final Exam"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+# 1. Preamble
+
+## Honor Pledge
+
+I affirm that I neither received nor gave any unauthorized help on this exam and that all work is my own. I did not consult generative AI.
+
+Signed: Luke Ghallahorne
+
+## Packages
+
+I used the following packages and associated functions in this exam:
+
+| Package   | Functions    | Purpose   |
+|-----------|--------------|-----------|
+| tidyverse | ggplot()     |  plot generator |
+|           | filter()     |  keep rows that match condition |
+|           | sapply()     |  applies function across columns |
+| GGally    | ggpairs()    |  pairs plot matrices |
+| corrplot  | corrplot()   |  correlation plot for multivariate data |
+| PNWColors | pnwpalette() |  color palette generator |
+| vegan     | vegdist()    |  distance/dissimilarity matrices |
+|           | adonis2()    |  PERMANOVA |
+|           | metaMDS()    |  non-metric Multidimensional Scaling |
+|           | permustats() |  extract permutation stats from adonis2() |
+| ape       | pcoa()    |  Principle Coordinates Analysis |
+| dendextend() | color_branches() |  aesthetics for dendrograms |
+| ggpubr    | ggarrange()  |  combine ggplot figures |
+
+
+```{r warning = FALSE, message=FALSE}
+library(tidyverse)
+library(GGally)
+library(corrplot)
+library(PNWColors)
+library(biotools)
+library(vegan)
+library(ape)
+library(dendextend)
+library(ggpubr)
+```
+
+```{r}
+# Loading Color Palette, n = 2
+pal1 <- pnw_palette("Starfish", n = 2)
+# Loading Color Palette, n = 3
+pal2 <- pnw_palette("Starfish", n = 3)
+```
+
+```{r}
+# Loading abundance data and environmental variables
+fungi <- read.csv("Data/fungi.csv")
+fungi <- fungi[, order(names(fungi))]
+fungi.env <- read.csv("Data/fungiEnv.csv", stringsAsFactors = TRUE)
+```
+
+# 2. Introduction
+
+## Question
+Knapweed, *Centaurea stoebe*, is an invasive plant to the Northwest. Some of its competitive success is due to associations with arbuscular mycorrhizal (AM) fungi, which it seems to benefit from more than its native competitors. Furthermore, knapweed appears to be more successful in regions with drier soil than wetter, having much greater ground cover in the Intermountain West than the Pacific Northwest. Using data from a greenhouse experiment investigating the AM fungi communities associated with knapweed plants, I attempted to answer the questions:
+
+- **Do fungal communities in knapweed roots differ when soils are wet versus when they are dry?**
+- **Do other variables influence fungal communities?**
+
+## Data Description
+
+The variables in this dataset are:
+
+- sequence abundances for 51 AM fungi virtual taxa
+- moist: wet or dry soil treatment
+- pop: plant population from which seed was sourced
+    - jumbo, mpg, portal, or sandy
+- shoot: dry weight of aboveground tissue (g)
+- root: dry weight of belowground tissue (g)
+- total: dry weight of whole plant (g)
+
+### Explanatory Variables
+```{r results = FALSE}
+# Structure of environmental/explanatory variables
+str(fungi.env)
+# Summary statistics of environmental variables
+summary(fungi.env)
+```
+
+Explanatory variables include two categorical variables - soil treatment (dry or wet) and seed population of origin - as well as three continuous variables - shoot, root, and total biomass, measured in grams. Soil treatments are even groups of 16 plants each. Plants included 9 from the jumbo population, 7 from mpg, 8 from portal, and 8 from sandy. 
+
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi.env[,-c(1:3)], aes(col = fungi.env$moist)) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+The three continuous explanatory variables - shoot, root, and total biomass (g) - are roughly normally distributed in wet and dry treatment groups, as seen by the bell-shaped distribution curves and the roughly elliptical patterns of points in the pairwise plots. Root and shoot biomass are moderately correlated; both are strongly correlated with total biomass since it is a combination of the two.
+
+### Response Variables {.tabset}
+
+```{r results = FALSE}
+# Structure of abundance data
+str(fungi)
+# Summary statistics of abundance data (min, mean, max, quartiles)
+summary(fungi)
+# Standard deviation
+sapply(fungi[,-1], FUN = sd)
+```
+
+Arbuscular mycorrhizal (AM) fungi data included sequence abundances for 51 virtual taxa (i.e., "species") from 32 knapweed plants. Most taxa are absent in at least one knapweed plant, except for five ubiquitous taxa (VT108, VT113, VT143, VT193, and VT195). Maximum counts vary across multiple orders of magnitude, with the lowest (VT283 and VT409) at only 2 and the highest (VT281) at 677. Mean abundances vary similarly, from 0.09 (VT 283 and VT409) to 214.59 (VT281).
+
+#### VT005 - VT108
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,2:11], aes(col = fungi.env$moist),
+        upper = list(continuous = "points")) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+#### VT113 - VT153
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,12:21], aes(col = fungi.env$moist),
+        upper = list(continuous = "points")) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+#### VT155 - VT197
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,22:31], aes(col = fungi.env$moist),
+        upper = list(continuous = "points")) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+#### VT212 - VT281
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,32:41], aes(col = fungi.env$moist),
+        upper = list(continuous = "points")) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+#### VT283 - VT423
+```{r message = FALSE, warning = FALSE}
+ggpairs(fungi[,42:52], aes(col = fungi.env$moist),
+        upper = list(continuous = "points")) +
+  scale_color_manual(values = pal1) +
+  scale_fill_manual(values = pal1)
+```
+
+#### Correlation Plot
+```{r results = FALSE}
+M <- cor(fungi[,-1])
+corrplot(M, tl.cex = 0.5)
+
+cor.test(fungi$VT416, fungi$VT005)
+cor.test(fungi$VT113, fungi$VT115)
+cor.test(fungi$VT057, fungi$VT340)
+```
+
+### 
+Due to the number of response variables, I broke up the pairwise plots into groups of 10 to get a general idea of the distributions and correlations between taxa. Color indicates wet (purple) or dry (red) treatment.
+
+The response variables have highly non-normal distributions, skewing toward zeros and low values across taxa. A few pairwise plots have a roughly elliptical shape but the majority show strong tendencies toward zeroes. This is unsurprising given the nature of the response data as virtual taxa abundances. 
+
+Correlation between AM fungi taxa varies from near zero for many pairs to very high correlation. Many pairs are moderately correlated, justifying the use of multivariate methods to assess differences in AM fungi communities. 
+
+Three pairs of taxa are very highly correlated: VT416 and VT005 (r = 0.95, t~30~ = 17.4, p < 0.001), VT113 and VT115 (r = 0.94, t~30~ = 15.3, p < 0.001), and VT057 and VT340 (r = 0.91, t~30~ = 12.2, p < 0.001).
+
+```{r include = FALSE, eval=FALSE}
+moist <- fungi.env$moist
+fungi.box <- data.frame(moist, fungi[,-1])
+fungi.box
+str(fungi.box)
+fungi.BoxsM <- boxM(data = fungi.box[,-52],
+            group = fungi.box$moist)
+fungi.BoxsM
+```
+
+Because the number of observations (n = 32, i.e., knapweed plants) is less than the number of variables (p = 51, i.e., AM fungi virtual taxa), a Box's M test for homogeneity of covariance matrices was unsuccessful.
+
+Since these data are not multivariate normally distributed, they do not satisfy the assumptions of analyses like Principle Components Analysis (PCA) or Multivariate Analysis of Variance (MANOVA). As such, equal variance in response variables among explanatory variables (i.e., dry and wet soil treatments) is not a prerequisite for other analyses like PCoA, nMDS, and PERMANOVA.
+
+# 3. Methods
+
+I first decided on a method of unconstrained ordination: Principle Components Analysis (PCA), Principle Coordinates Analysis (PCoA), or non-metric Multidimensional Scaling (nMDS).
+
+As the data do not satisfy the assumption of multivariate normality, I decided a Principle Component Analysis (PCA) was inappropriate for these data.
+
+Both Principle Coordinates Analysis (PCoA) and non-metric Multidimensional Scaling (nMDS) rely on distance/dissimilarity matrices to construct ordination axes. I chose Bray-Curtis dissimilarity measures over Euclidean or standardized Euclidean measures because Bray-Curtis better accounts for repeating zeros often seen in community abundance data such as the AM fungi data. 
+
+I compared a PCoA with a nMDS. NMDS is an iterative ordination that finds the lowest-stress solution through multiple random starts. I first ran the nMDS with 2 and 3 dimensions to compare stress and R^2 values to the variation explained in the PCoA axes. I decided a PCoA with 2 axes better captured the variance in the data than either nMDS.
+
+After choosing the best ordination, I used hierarchical clustering with Ward's linkage and used a dendrogram to visualize clusters. I decided to cut the tree at k = 3 because three distinct clusters diverged at a distance of about 0.5.
+
+To fit continuous explanatory variables (root, shoot, and total biomass), I regressed them onto the two PCoA axes. This resulted in vectors with directions showing the maximum gradient of change for each variable, as well as R^2 goodness of fit values, and permuted p-values for the significance of that R^2. The length of the vector represents the scaled magnitude of each gradient.
+
+I mapped fungal virtual taxa weighted averages onto the ordination plot to see if clusters were influenced by presence/absence of particular taxa.
+
+To determine if any explanatory variables significantly influenced fungal communities, I used a Permutational Multivariate Analysis of Variance (PERMANOVA). I chose PERMANOVA over MANOVA for two reasons: (1) the fungi data are not normally distributed, which is a requirement for MANOVA; and (2) PERMANOVA is an iterative process that creates a sampling distribution from random assignments of data groups, making it a good analysis for community data with many repeating zeros. PERMANOVA requires a distance/dissimilarity measure, much like PCoA, so I used Bray-Curtis distances again for continuity and practicality (still being the more appropriate measure for these data).
+
+# 4. Ordination Results {.tabset}
+## PCoA
+
+```{r}
+# response variable matrix
+Y <- as.matrix(fungi[,-1])
+
+# Distance/dissimilarity matrix with Bray-Curtis distances
+fungi.dist <- vegdist(Y, method = "bray")
+
+# PCoA on distance/dissimilarity matrix
+fungi.pcoa <- pcoa(fungi.dist)
+fungi.pcoa$values[1:6, 1:3]
+
+# Extract EigVals, relative EigVals, and relative corrected EigVals
+# fungi.pcoa$values[,1:3]
+
+# Plot eigenvalues to see variation explained by each axis
+# plot(fungi.pcoa$values[,3], type = "b")
+
+# Quick plot of PCOA1 and PCOA2, colored by treatment
+# plot(fungi.pcoa$vectors[,1], fungi.pcoa$vectors[,2], col = fungi.env$moist)
+```
+
+PCoA explains 44% of variation in the first two axes (relative corrected eigenvalues, PCoA1 = 0.33, PCoA2 = 0.11). After the second axis, additional variation explained per axis decreases dramatically. Due to the diminishing returns on further axes, I determined that PCoA1 and PCoA2 were sufficient to explore the data.
+
+Preliminary plots of PCoA1 and PCoA2 showed a clear separation by soil treatment along PCoA1. Communities from wet soil treatments all had positive PCoA1 scores, while those from dry treatments all had negative PCoA1 scores. Some spreading along PCoA2 arose for communities with negative PCoA1 scores. There was a single outlier community with a near-zero PCoA1 score and the highest PCoA2 score.
+
+I decided to continue with the PCoA as my preferred ordination because it explained nearly 50% of the data with only 2 axes and spread out the communities more in the ordination space.
+
+
+## nMDS - 2 Axes
+
+```{r}
+set.seed(42)
+
+# Run nMDS, 2 axes, 40 tries, Bray-Curtis distances
+fungi.nmds.2D <- metaMDS(fungi[,-1], k = 2, distance = "bray",
+                      try = 40, trymax = 40, trace = FALSE)
+fungi.nmds.2D
+
+# Visualize stressplot for R^2 values
+# stressplot(fungi.nmds.2D)
+
+# Quick Plot of NMDS1 and NMDS2
+# plot(fungi.nmds.2D$points[,1], fungi.nmds.2D$points[,2], col = fungi.env$moist)
+```
+
+Non-metric fit of the nMDS was rather high ($R^2$ = 0.953) but no repeated solution with stress below 0.2 was found with 40 random starts. Preliminary plots showed a similar separation of wet and dry treatment groups along nMDS1, but it was less dramatic than the separation on PCoA1. 
+
+## nMDS - 3 Axes
+I expanded the nMDS to include 3 axes to see if a more stable solution could be found with additional variation.
+
+```{r}
+set.seed(42)
+
+fungi.nmds.3D <- metaMDS(fungi[,-1], k = 3, distance = "bray",
+                      try = 40, trymax = 40,
+                      trace = FALSE)
+fungi.nmds.3D
+
+# Stressplot
+# stressplot(fungi.nmds.3D)
+
+# Pairwise plots of NMDS1, NMDS2, and NMDS3
+
+# plot(fungi.nmds.3D$points[,1], fungi.nmds.3D$points[,2], col = fungi.env$moist)
+
+# plot(fungi.nmds.3D$points[,1], fungi.nmds.3D$points[,3], col = fungi.env$moist)
+
+# plot(fungi.nmds.3D$points[,3], fungi.nmds.3D$points[,2], col = fungi.env$moist)
+```
+
+Three axes resulted in a best solution with stress = 0.157 and non-metric $R^2$ = 0.975. NMDS1 continues to show separation between wet and dry treatments. However, NMDS2 and NMDS3 did not show any separation of soil treatment groups or other environmental factors. The addition of the third axis increases the fit and decreases the stress of the ordination, but does not add very much detail that can aid in interpretation of the communities. Since the third nMDS axis did not reveal any new patterns, it is not necessary or helpful to include.
+
+## Preliminary Plots {.tabset}
+### PCoA
+```{r}
+fungiPlot <- data.frame(
+  PCOA1 <- fungi.pcoa$vectors[,1],
+  PCOA2 <- fungi.pcoa$vectors[,2],
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("PCOA1", "PCOA2", "Soil")
+
+plot1 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal1)
+plot1
+```
+
+**Figure 1.** Principle Coordinates Analysis (PCoA) of AM fungi communities in dry and wet soil treatments (variation explained: PCoA1 = 33%, PCoA2 = 11%). Shape indicates soil treatment.
+
+### nMDS - 2 Axes
+```{r}
+fungiPlot <- data.frame(
+  NMDS1 <- fungi.nmds.2D$points[,1],
+  NMDS2 <- fungi.nmds.2D$points[,2],
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("NMDS1", "NMDS2", "Soil")
+
+plot2 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS1, y = NMDS2, 
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS2") +
+  scale_color_manual(values = pal1)
+plot2
+```
+
+**Figure 2.** Non-Metric Multidimensional Scalind of AM fungi communities in dry and wet soil treatments (2 axes; $R^2$ = 0.953, stress = 0.21). Shape indicates soil treatment.
+
+### nMDS - 3 Axes
+```{r}
+fungiPlot <- data.frame(
+  NMDS1 <- fungi.nmds.3D$points[,1],
+  NMDS2 <- fungi.nmds.3D$points[,2],
+  NMDS3 <- fungi.nmds.3D$points[,3],
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("NMDS1", "NMDS2", "NMDS3", "Soil")
+
+plot3.1 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS1, y = NMDS2, 
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS2") +
+  scale_color_manual(values = pal1)
+
+plot3.2 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS1, y = NMDS3, 
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS1") +
+  ylab("NMDS3") +
+  scale_color_manual(values = pal1)
+
+plot3.3 <- ggplot() +
+  geom_point(data = fungiPlot,
+             aes(x = NMDS2, y = NMDS3, 
+                 shape = Soil), 
+                 size = 3) +
+  coord_fixed() +
+  xlab("NMDS2") +
+  ylab("NMDS3") +
+  scale_color_manual(values = pal1)
+```
+
+```{r}
+plot3 <- ggarrange(plot3.1, plot3.2, plot3.3,
+                   labels = c("a", "b", "c"))
+plot3
+```
+
+**Figure 3.** Non-Metric Multidimensional Scalind of AM fungi communities in dry and wet soil treatments (3 axes; $R^2$ = 0.975, stress = 0.157). Shape indicates soil treatment.
+
+# 5. Clustering Results
+
+```{r}
+# Create distance/dissimilarity measure
+## vegdist() from vegan package
+fungi.dist <- vegdist(fungi[,-1], method = "bray")
+
+# Create hierarchical clusters with Ward's linkage
+fungi.hcl <- hclust(fungi.dist, "ward.D2")
+
+# Save output as dendrogram
+fungi.dend <- as.dendrogram(fungi.hcl)
+
+# Plot dendrogram to determine cut
+# plot(fungi.dend)
+```
+
+Three visually distinct clusters emerged at a distance of about 0.5, after which there are long distances before the clusters merge. This was strong evidence for the presence of three groups within these data.
+
+
+```{r}
+# Cut dendrogram with 3 groups 
+fungi.clust <- cutree(fungi.hcl, k = 3)
+
+# Recolor labels and branches by cluster
+fungi.dend <- fungi.dend |>
+  color_branches(k = 3, col = pal2) |>
+  color_labels(k = 3, col = pal2)
+
+# Plot final dendrogram
+plot(fungi.dend)
+```
+
+**Figure 4.** Dendrogram of hierarchical clustering using Ward's linkage of AM fungi communities. Tree cut at k = 3. Colors indicate cluster.
+
+```{r}
+# nMDS Scores and Clusters for Abundance Dataframe for Plotting
+fungiPlot <- data.frame(
+  PCOA1 <- fungi.pcoa$vectors[,1],
+  PCOA2 <- fungi.pcoa$vectors[,2],
+  Cluster <- as.factor(fungi.clust),
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("PCOA1", "PCOA2", "Cluster", "Soil")
+
+# Centroid centers for each cluster
+plot.center <- fungiPlot[,-4] |>
+  group_by(Cluster) |>
+  summarise(
+    Axis1.center = mean(PCOA1), 
+    Axis2.center = mean(PCOA2),
+    )
+
+# Line segments joining points and centroids by cluster
+plot.segs <- fungiPlot[,-4] |>
+  left_join(plot.center, by = join_by(Cluster))
+```
+
+
+```{r}
+plot4 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Soil), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Spider plot for Clusters
+  ## Lines Points to Centroid
+  geom_segment(data = plot.segs, 
+               aes(x = PCOA1, y = PCOA2,
+                   xend = Axis1.center, yend = Axis2.center,
+                   colour = Cluster),
+               show.legend = FALSE) +
+  ## Cluster Centroids
+  geom_point(data = plot.center, 
+             aes(x = Axis1.center, y = Axis2.center, 
+                 colour = Cluster),
+             size = 4,
+             shape = 8,
+             show.legend = FALSE) 
+plot4
+```
+
+**Figure 5.** Spider plot of PCoA of AM fungi communities in dry and wet soil treatments (variation explained: PCoA1 = 33%, PCoA2 = 11%). Shape indicates soil treatment, color indicates clusters identified from hierarchical clustering with Ward's linkage, k = 3. Stars within each cluster denote the centroid of that cluster.
+
+Clusters aligned very well with soil treatment category. All dry treatment communities were grouped into clusters 1 or 2, while all but one wet soil communities were grouped into cluster 3. Clusters 1 and 2 overlapped on negative PCoA1 scores, but were delineated along PCoA2, with cluster 1 having negative scores and cluster 2 having positive scores.
+
+# 6. Fitting Variables Results
+## Fitting Explanatory Variables
+
+```{r}
+set.seed(42)
+
+pcoa.fit <- envfit(fungi.pcoa$vectors, 
+                   fungi.env[,-1],
+                   choices = c(1,2))
+pcoa.fit
+```
+
+Regressing the explanatory variables onto the ordination space showed that only two variables significantly impacted the dispersion of communities: shoot biomass ($R^2$ = 0.367, p = 0.002) and soil treatment ($R^2$ = 0.698, p < 0.001). $R^2$ values for the other three variables were produced by the fit, but permutation tests showed that the $R^2$ were not significant (root: $R^2$ = 0.042, p = 0.56; total: $R^2$ = 0.134, p = 0.131; pop: $R^2$ = 0.039, p = 0.845). 
+
+Soil treatment (moist) was strongly delineated along PCoA1, with dry soils at positive scores and wet soils at negative scores. Shoot biomass diverged more along PCoA2, with more biomass at more positive PCoA2 scores. Non-significant variables of population, root, and total biomass appear to spread slightly along PCoA2 but did not have significant $R^2$ values.
+
+```{r}
+# nMDS Scores and Clusters for Abundance Dataframe for Plotting
+fungiPlot <- data.frame(
+  PCOA1 <- fungi.pcoa$vectors[,1],
+  PCOA2 <- fungi.pcoa$vectors[,2],
+  Cluster <- as.factor(fungi.clust),
+  Soil <- fungi.env$moist)
+colnames(fungiPlot) <- c("PCOA1", "PCOA2", "Cluster", "Soil")
+
+# Environmental Variables Dataframe for Plotting
+## Continuous Variables (vectors)
+vecPlot <- as.data.frame(scores(pcoa.fit,
+                                display = "vectors"))
+
+vecPlot <- cbind(vecPlot,
+                 Vname = rownames(vecPlot),
+                 Pvalues = pcoa.fit$vectors$pvals,
+                 R_squared = pcoa.fit$vectors$r)
+# Filter by significant p values
+vecPlotSig <- subset(vecPlot, Pvalues < 0.05)
+
+## Categorical Variables (centroids)
+centPlot <- as.data.frame(scores(pcoa.fit,
+                                 display = "factors"))
+centPlot <- cbind(centPlot,
+                 Factor_name = rownames(centPlot))
+# Filter by significant p values
+centPlotSig <- centPlot[c(1:2),]
+
+# Species Scores Dataframe for Plotting
+
+fungi.scores <- as.data.frame(wascores(fungi.pcoa$vectors, fungi[,-1]))
+```
+
+```{r}
+
+plot5 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Soil), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Fitted Continuous Variable Arrows
+  ## Arrows
+  geom_segment(data = vecPlot,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               color = "grey30",
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  ## Arrows for Significance
+  geom_segment(data = vecPlotSig,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               color = "coral4",
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+  ## Labels
+  geom_text(data = vecPlot,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            color = "grey30",
+            size = 3,
+            nudge_y = 0.015) +
+  ## Labels for Significance
+  geom_text(data = vecPlotSig,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            color = "coral4",
+            size = 3,
+            nudge_y = 0.015) +
+# Fitted Factor (Categorical Variable) Centroids
+  geom_text(data = centPlot, 
+             aes(x = Axis.1, y = Axis.2, 
+                 label = Factor_name),
+            color = "grey30",
+            size = 3) +
+  ## Labels for Significance
+  geom_text(data = centPlotSig, 
+             aes(x = Axis.1, y = Axis.2, 
+                 label = Factor_name),
+            size = 3,
+            color = "coral4") +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot5
+```
+
+**Figure 6.** PCoA of AM fungi communities in dry and wet soil treatments. Shape indicates soil treatment, color indicates clusters identified from hierarchical clustering with Ward’s linkage, k = 3. Arrows show fitted continuous variables of root, shoot, and total biomass: directions show highest gradient of change and lengths show scaled magnitude of that gradient. Text labels denote centroids of categorical variables (population and soil treatment). Red text indicates significant $R^2$ of fitted variables.
+
+## Mapping Fungi Virtual Taxa to Ordination Space
+
+I used weighted averages for each fungal taxa across communities to create species scores for each taxon and mapped them onto the ordination space in order to see if specific clusters were influenced by particular species.
+
+```{r}
+plot6 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Soil), 
+                 size = 3) +
+# General Plot Aesthetics
+  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Fungal virtual taxa scores (weighted averages)
+  geom_text(data = fungi.scores, 
+            aes(x = Axis.1, y = Axis.2),
+            label = rownames(fungi.scores),
+            size = 2.5, color = "coral4") +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot6
+```
+
+**Figure 7.** CoA of AM fungi communities in dry and wet soil treatments. Shape indicates soil treatment, color indicates clusters identified from hierarchical clustering with Ward’s linkage, k = 3. Text shows weighted average centroids for each fungal virtual taxon.
+
+Most taxa have scores centered around (0,0) in the PCoA 1/2 space. Approximately 14 taxa group within cluster 3 and wet soil treatments. A few (notably VT349, VT409, and VT294) group within cluster 1 but most others do not appear to have a strong impact on community composition.
+
+# 7. NHST Results
+## Explanatory Variables
+
+- **$H_0:$** Mean root, shoot, total biomass, population (portal, jumbo, sandy, and mpg) and soil treatment (wet and dry) are equal across communities.
+- **$H_a:$** At least one variable differs significantly among fungal communities.
+- **$\alpha$** = 0.05
+
+$$ Y \sim moist + shoot + total + root + pop $$
+
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm <- adonis2(Y ~ fungi.env$moist + 
+                        fungi.env$shoot + 
+                        fungi.env$total + 
+                        fungi.env$root + 
+                        fungi.env$pop, 
+                      method = "bray")
+fungi.perm
+
+# Save permutation stats for density plot
+fungi.permstats <- permustats(fungi.perm)
+# Density Plot
+# densityplot(fungi.permstats)
+
+```
+
+| Variable      | df   | $R^2$  | pseudo-$F$  | p-value |
+|-----------|--------------|-----------|-----------|--------------|
+| Moist (Soil)  | 1,25 | 0.440  | 25.9        | 0.001  |
+| Shoot         | 1,25 | 0.046  | 2.72        | 0.035  |
+| Total         | 1,25 | 0.017  |  0.98       | 0.394  |
+| Pop           | 3,25 | 0.073  |  1.44       | 0.159  |
+
+**Table 1.** PERMANOVA results for explanatory variables.
+
+PERMANOVA with all explanatory variables as factors, ordered sequentially by highest $R^2$ from variable fitting, showed that two variables differed among fungal communities: moisture/soil treatment ($R^2$ = 0.44, pseudo-$F$~1,25~ = 25.9, p < 0.001) and shoot biomass ($R^2$ = 0.05, pseudo-$F$~1,25~ = 2.7, p = 0.035).
+
+Total and root biomass, as well as population, had no significant impact (total: $R^2$ = 0.017, pseudo-$F$~1,25~ = 0.98, p = 0.394; pop: $R^2$ = 0.07, pseudo-$F$~3,25~ = 1.44, p = 0.159). Root biomass was dropped by adonis2 as it did not explain any variation.
+
+As shown by the $R^2$ values of moist and shoot, soil treatment level explains far more of the variation in the data than shoot biomass. 
+
+## Clusters
+
+- **$H_0$**: $\mu_{C1} = \mu_{C2} = \mu_{C3}$
+- **$H_a$**: at least one cluster varies significantly in fungal community composition.
+
+$$Y \sim Cluster $$
+
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C <- adonis2(Y ~ fungi.clust, 
+                      method = "bray")
+fungi.perm.C
+```
+
+PERMANOVA on the clusters identified that fungal communities partitioned into significantly different groups ($R^2$ = 0.38, F~1,30~ = 18.5, p < 0.001).
+
+To see if all three clusters were different from one another, I performed post-hoc pairwise PERMANOVAs with Bonferroni corrections for the alpha value (number of tests = 3, $\alpha_{corrected}$ = 0.05/3 = 0.0167).
+
+### Pairwise: C1 & C2
+
+```{r}
+set.seed(42)
+
+fungi.abund <- cbind(fungi.clust, fungi)
+# Subsetting to include only NI and IP
+fungi.C12 <- fungi.abund |> 
+  filter(fungi.clust %in% c("1","2"))
+# Save response as matrix
+Y.C12 <- as.matrix(fungi.C12[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C12 <- adonis2(Y.C12 ~ fungi.C12$fungi.clust, method = "bray")
+fungi.perm.C12
+```
+
+Clusters 1 and 2 were significantly different from each other in fungal community composition ($R^2$ = 0.33, pseudo-$F$~1,15~ = 7.4, p < 0.001).
+
+### Pairwise: C1 & C3
+
+```{r}
+set.seed(42)
+
+fungi.abund <- cbind(fungi.clust, fungi)
+# Subsetting to include only NI and IP
+fungi.C13 <- fungi.abund |> 
+  filter(fungi.clust %in% c("1","3"))
+# Save response as matrix
+Y.C13 <- as.matrix(fungi.C13[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C13 <- adonis2(Y.C13 ~ fungi.C13$fungi.clust, method = "bray")
+fungi.perm.C13
+```
+
+Clusters 1 and 3 were significantly different from each other in fungal community composition ($R^2$ = 0.49, pseudo-$F$~1,24~ = 22.8, p < 0.001).
+
+### Pairwise: C2 & C3
+
+```{r}
+set.seed(42)
+
+fungi.abund <- cbind(fungi.clust, fungi)
+# Subsetting to include only NI and IP
+fungi.C23 <- fungi.abund |> 
+  filter(fungi.clust %in% c("2","3"))
+# Save response as matrix
+Y.C23 <- as.matrix(fungi.C23[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.C23 <- adonis2(Y.C23 ~ fungi.C23$fungi.clust, method = "bray")
+fungi.perm.C23
+```
+
+Clusters 1 and 2 were significantly different from each other in fungal community composition ($R^2$ = 0.51, pseudo-$F$~1,19~ = 20.1, p < 0.001).
+
+## 
+
+| Clusters | df    | $R^2$ | pseudo-$F$  | p-value |
+|-----------|--------------|-----------|--------------|-----------|
+| 1 + 2    |  1,15 | 0.33  | 7.4         |  0.001  |
+| 1 + 3    | 1,24  | 0.49  | 22.8        |  0.001  |
+| 2 + 3    | 1,19  | 0.51  |  20.1       |  0.001  |
+
+**Table 2.** PERMANOVA results of pairwise cluster comparisons.
+
+Pairwise comparisons of clusters showed that all three clusters are significantly different from one another (see Table 2).
+
+## Final Model
+To assess if any variation explained by cluster, soil treatment, and shoot biomass were overlapping, I used a PERMANOVA with a final model including all 3 as factors, with an interaction term for cluster and soil treatment.
+
+$$Y \sim moist * cluster + shoot $$
+
+```{r}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.F <- adonis2(Y ~ fungi.env$moist * 
+                        fungi.clust +
+                        fungi.env$shoot, 
+                      method = "bray")
+fungi.perm.F
+```
+
+| Variable      | df   | $R^2$  | pseudo-$F$  | p-value |
+| Moist (Soil)  | 1,27 | 0.440  | 28.8        | 0.001  |
+| Cluster       | 1,27 | 0.036  | 2.37        | 0.048  |
+| Shoot         | 1,27 | 0.023  |  1.50       | 0.170  |
+| Moist:Cluster | 1,27 | 0.089  |  5.85       | 0.001  |
+
+**Table 3.** PERMANOVA results of AM fungal communities by soil treatment, cluster, and shoot biomass, with an interaction between treatment and cluster.
+
+```{r results = FALSE}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.F <- adonis2(Y ~ fungi.clust *
+                          fungi.env$moist +
+                        fungi.env$shoot, 
+                      method = "bray")
+fungi.perm.F
+```
+
+```{r results = FALSE}
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+fungi.perm.F <- adonis2(Y ~ fungi.env$shoot +
+                          fungi.clust *
+                          fungi.env$moist, 
+                      method = "bray")
+fungi.perm.F
+```
+
+Including the three factors and rearranging their order showed that much of the variation explained by cluster and moisture was redundant. In fact, with moisture as the first factor, the $R^2$ of cluster reduces to 0.04 (pseudo-$F$~1,27~ = 2.37, p = 0.048) and shoot biomass only explains any significant variation if it is the first factor. The PERMANOVA supported this by showing a significant interaction between cluster and soil treatment.
+
+# 8. Ordination Plot
+
+```{r}
+plot7 <- ggplot() +
+# Plotting  fungal community scores for PCOA1 and PCOA 2 as points
+  geom_point(data = fungiPlot,
+             aes(x = PCOA1, y = PCOA2, 
+                 color = Cluster,
+                 shape = Soil), 
+                 size = 3) +
+# General Plot Aesthetics
+#  coord_fixed() +
+  xlab("PCOA1") +
+  ylab("PCOA2") +
+  scale_color_manual(values = pal2) +
+# Spider plot for Clusters
+  ## Lines Points to Centroid
+  geom_segment(data = plot.segs, 
+               aes(x = PCOA1, y = PCOA2,
+                   xend = Axis1.center, yend = Axis2.center,
+                   colour = Cluster),
+               show.legend = FALSE) +
+  ## Cluster Centroids
+  geom_point(data = plot.center, 
+             aes(x = Axis1.center, y = Axis2.center, 
+                 colour = Cluster),
+             size = 4,
+             shape = 8,
+             show.legend = FALSE) +
+  
+# Fitted Continuous Variable Arrows
+  ## Arrows
+  geom_segment(data = vecPlotSig,
+               aes(x = 0, xend = Axis.1,
+                   y = 0, yend = Axis.2),
+               color = "grey30",
+               arrow =
+                 arrow(length = unit(0.5, "cm"))) +
+
+  geom_text(data = vecPlotSig,
+            aes(x = Axis.1, y = Axis.2,
+                label = Vname),
+            size = 4,
+            nudge_y = 0.015) +
+ 
+# Fitted Factor (Categorical Variable) Centroids
+  geom_text(data = centPlotSig, 
+             aes(x = Axis.1, y = Axis.2, 
+                 label = Factor_name),
+            size = 4) +
+
+# Mapping species scores onto ordination
+  geom_text(data = fungi.scores, 
+            aes(x = Axis.1, y = Axis.2),
+            label = rownames(fungi.scores),
+            size = 2.5, color = "coral4",
+            alpha = 0.4) +
+# Axes at 0,0
+  geom_hline(yintercept = 0, linetype = "dashed", 
+             colour = "grey50") + 
+  geom_vline(xintercept = 0, linetype = "dashed",
+             colour = "grey50") 
+plot7
+  
+```
+
+**Figure 8.** Principle Coordinates Analysis of AM fungi communities in dry and wet soil treatments (variation explained: PCoA1 = 33%, PCoA2 = 11%, relative corrected eigenvalues). Shape indicates soil treatment, color indicates clusters identified from hierarchical clustering with Ward's linkage, k = 3. Stars within each cluster denote the centroid of that cluster. Arrow shows fitted vector of shoot biomass (g) onto the ordination space: direction depicts the gradient of change, length shows scaled magnitude of that gradient. Text labels "moistdry" and "moistwet" show the fitted centroid scores on PCoA1 and PCoA2 for soil treatment (dry or wet). Red text denotes the species scores for AM fungi virtual taxa. 
+
+PCoA1 distinguished between dry (negative) and wet (positive) communities. This separation pulled cluster 3 apart from clusters 1 and 2. PCoA2 was more heavily impacted by shoot biomass than soil treatment. Along this axis, clusters 1 and 2 separated, with cluster 2 having greater shoot biomass than cluster 1.
+
+Most taxa have scores centered around (0,0) in the PCoA 1/2 space. Approximately 14 taxa group within cluster 3 and wet soil treatments. A few (VT349, VT409, and VT294) group within cluster 1 but most others do not appear to have a strong impact on community composition.
+
+# 9. Conclusions
+
+AM fungi community composition in the roots of the invasive knapweed plant not only differ significantly between wet and dry soil treatments (PERMANOVA, $R^2$ = 0.44, pseudo-$F$~1,27~ = 28.8, p < 0.001), but also cluster into significant groups influenced by soil moisture and shoot growth of the plant. Cluster analysis identified three significantly distinct groups (PERMANOVA, $R^2$ = 0.036, pseudo-$F$~1,27~ = 2.37, p < 0.048) with a significant interaction with soil treatment (PERMANOVA, $R^2$ = 0.089, pseudo-$F$~1,27~ = 5.85, p < 0.001).
+
+Shoot biomass had a small effect on community composition as well, but variation explained by shoot biomass was redundant to that explained by soil treatment and cluster (PERMANOVA, $R^2$ = 0.023, pseudo-$F$~1,27~ = 1.50, p = 0.170).
+
+From the ordination plot and the PERMANOVA results, cluster 3 separated from the other 2 by soil treatment primarily. Shoot biomass likely played some part in the dilineation of clusters 2 and 3 along PCoA2. However, one community in identified as part of cluster 1 was from the wet soil treatment. This, along with the cumulative variation explained by the PCoA of only 44%, highlighted that while these explanatory variables do impact fungal community composition, there must be other factors contributing to the differences between communities.
+
+Cluster 3 (dominated by wet soils) was strongly influenced by many virtual taxa that were absent or less dominant in communities of cluster 1 or 2. Understanding how these taxa interact in these communities could help further clarify how wet versus dry soil may impact them.
+
+# 10. Reflection
+
+This final went well (I hope), though it did take longer than I anticipated for it to be as thorough as possible. I did struggle a lot between choosing PCoA or nMDS for my final ordination. Although I did not include all of them here, I did fit variables and species scores onto the 3 NMDS plots I made to see if axes 2 and 3 explained more variation from the other variables, but with no such luck. I wasn't 100% sure how to compare the R^2 and stress when comparing PCoA to nMDS - the nMDS had a pretty high R^2 but also very high stress, which led me to the conclusion that PCoA would be more appropriate here. I hope my justifications of that decision are clear going through the assignment.
+
+I also included more preliminary plots than I typically would. It was in part to show my process leading toward the final ordination plot, as well as to include some information that I chose to remove for the final plot, but was still relevant to my interpretation.
+
+

@@ -1,0 +1,602 @@
+---
+title: "Assignment 3 Box's M and MANOVA"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(biotools)
+library(knitr)
+library(kableExtra)
+library(RColorBrewer)
+```
+
+```{r functions}
+write_matex <- function(x) {
+  begin <- "$$\\begin{bmatrix}"
+  end <- "\\end{bmatrix}$$"
+  X <-
+    apply(x, 1, function(x) {
+      paste(
+        paste(x, collapse = "&"),
+        "\\\\"
+      )
+    })
+  writeLines(c(begin, X, end))
+}
+```
+
+
+# Introduction.
+
+These data consist of multiple measurements of canine skulls, both of Prehistoric dogs and of different extant canine groups.
+Researchers measured nine total variables, as well as the group and sex of each animal.
+I will be using these data to see if there are differences in skull shape between canine groups.
+Data from McKechnie et al. 1975.
+
+For this analysis, I will be subsetting the data to include only skulls of male animals and narrowing down the response variables.
+As the sex of prehistoric dogs is unknown from the skulls, reducing the dataset to all males simultaneously removes that group from the analysis.
+The response variables kept will consist of:
+
+-   X1: length of mandible (mm)
+-   X4: height of mandible below first molar (mm)
+-   X5: length of first molar (mm)
+-   X7: length of first to third molar inclusives (mm; for cuon group, first to second molar)
+
+The remaining canine groups are:
+
+-   m_dogs = modern Thai dogs
+-   jack = golden jackals
+-   cuons = cuons (aka dholes)
+-   wolves = Indian wolves
+
+The overarching question for my analysis is: do males in these canine groups differ in skull shape (quantified by X1, X4, X5, and X7)?
+
+# Methods.
+
+After first reducing the original dataset to include only my variables of interest, I will explore the data by summarizing the mean and variance vectors, as well as covariance matrices and correlation matrices, separated by group.
+Skull measurements are likely to be correlated to some degree, especially my variables of interest, since they are different measurements of jaw components (which develop in tandem during growth).
+Therefore, a multivariate analysis is likely appropriate for these data.
+My question is if skull sizes differ between animal groups, so I will implement a MANOVA to test for significant differences between skull sizes.
+
+To ensure the data meet the assumptions of a MANOVA, I will check for normality of data individually and pairwise across variables, by animal group.
+I will use boxplots and histograms to assess normality of individual variables and pairwise scatterplots (looking for elliptical patterns of correlation) to compare combinations of variables.
+
+I will then analyze the assumption of equal covariance matrices, using the 3x SD rule of thumb verified with a Box's M test for homogeneity of covariance.
+
+Provided the data meet these assumptions, I will continue with the MANOVA, using the Pillai's trace to determine an approximate F value with appropriate degrees of freedom.
+If a significant result is found, I will follow with a post-hoc pairwise comparison of groups using pairwise MANOVA and/or Hotelling's $T^2$.
+
+# Results.
+
+### Data exploration. {.tabset}
+
+#### Loading and subsetting data.
+
+```{r}
+# loading data
+dogs <- read.csv("Data/mandibles.csv")
+# dogs
+head(dogs)
+
+# Subsetting dataframe to include variables of interest - X1, X4, X5, X7
+dogs2 <- dogs[,c(3, 13, 4, 7, 8, 10)]
+# dogs2
+head(dogs2)
+
+# Subsetting with only male dogs, then removing the column for Sex
+dogsSub <- dogs2[dogs2$Sex == "1", -2]
+#head(dogsSub)
+#summary(dogsSub)
+#str(dogsSub)
+dogsSub$G_name <- as.factor(dogsSub$G_name)
+```
+
+#### Mean vectors.
+
+```{r}
+# mean vectors by group
+dogsSub.Mean <- dogsSub |>
+  group_by(G_name) |>
+  dplyr::summarise(X1 = mean(X1),
+                   X4 = mean(X4),
+                   X5 = mean(X5),
+                   X7 = mean(X7))
+colnames(dogsSub.Mean) <- c("Group", "X1", "X4", "X5", "X7")
+
+kbl(dogsSub.Mean, digits = 2) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+```
+
+#### Variance vectors.
+
+```{r}
+dogsSub.Var <- dogsSub |>
+  group_by(G_name) |>
+  dplyr::summarise(X1 = var(X1),
+                   X4 = var(X4),
+                   X5 = var(X5),
+                   X7 = var(X7))
+colnames(dogsSub.Var) <- c("Group", "X1", "X4", "X5", "X7")
+
+kbl(dogsSub.Var) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+### Matrices. {.tabset}
+
+#### Modern Thai dogs.
+
+**Covariance Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cov(dogsSub[dogsSub$G_name == "m_dogs", -1]),4)))
+```
+
+**Correlation Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cor(dogsSub[dogsSub$G_name == "m_dogs", -1]),4)))
+```
+
+#### Golden jackals.
+
+**Covariance Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cov(dogsSub[dogsSub$G_name == "jack", -1]),4)))
+```
+
+**Correlation Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cor(dogsSub[dogsSub$G_name == "jack", -1]),4)))
+```
+
+#### Cuons (Dholes).
+
+**Covariance Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cov(dogsSub[dogsSub$G_name == "cuons", -1]),4)))
+```
+
+**Correlation Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cor(dogsSub[dogsSub$G_name == "cuons", -1]),4)))
+```
+
+#### Indian wolves.
+
+**Covariance Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cov(dogsSub[dogsSub$G_name == "wolves", -1]),4)))
+```
+
+**Correlation Matrix**
+
+```{r results = 'asis'}
+write_matex(as.matrix(round(cor(dogsSub[dogsSub$G_name == "wolves", -1]),4)))
+```
+
+### Distributions - Single Variable. {.tabset}
+
+#### Boxplots.
+
+```{r fig.asp = 1}
+par(mfrow=c(2,2))
+
+boxplot(dogsSub[,2] ~ dogsSub[,1],
+        xlab = "Group", ylab = "Length of Mandible", main = "X1", xaxt="n")
+axis(1, axTicks(1), labels=F)
+mtext(c("cuons\n", "jacks\n", "m_dogs\n", "wolves\n"), 
+      1, 2, at=axTicks(1))
+
+boxplot(dogsSub[,3] ~ dogsSub[,1],
+        xlab = "Group", ylab = "Height of Mandible", main = "X4", xaxt="n")
+axis(1, axTicks(1), labels=F)
+mtext(c("cuons\n", "jacks\n", "m_dogs\n", "wolves\n"), 
+      1, 2, at=axTicks(1))
+        
+boxplot(dogsSub[,4] ~ dogsSub[,1],
+        xlab = "Group", ylab = "Length of 1st Molar", main = "X5", xaxt="n")
+axis(1, axTicks(1), labels=F)
+mtext(c("cuons\n", "jacks\n", "m_dogs\n", "wolves\n"), 
+      1, 2, at=axTicks(1))
+
+boxplot(dogsSub[,5] ~ dogsSub[,1],
+        xlab = "Group", ylab = "Length of 1st to 3rd Molar (inclusive)", main = "X7", xaxt="n")
+axis(1, axTicks(1), labels=F)
+mtext(c("cuons\n", "jacks\n", "m_dogs\n", "wolves\n"), 
+      1, 2, at=axTicks(1))
+
+```
+
+#### Histograms: X1
+
+```{r fig.asp = 1}
+par(mfrow = c(2,2))
+hist(subset(dogsSub, G_name == "cuons")$X1, 
+     main = "Length of Mandible - Cuons",
+     xlab = "Mandible Length")
+hist(subset(dogsSub, G_name == "jack")$X1, 
+     main = "Length of Mandible - Jacks",
+     xlab = "Mandible Length")
+hist(subset(dogsSub, G_name == "m_dogs")$X1, 
+     main = "Length of Mandible - Modern Thai dogs",
+     xlab = "Mandible Length")
+hist(subset(dogsSub, G_name == "wolves")$X1, 
+     main = "Length of Mandible - Indian Wolves",
+     xlab = "Mandible Length")
+```
+
+#### Histograms: X4
+
+```{r fig.asp = 1}
+par(mfrow = c(2,2))
+hist(subset(dogsSub, G_name == "cuons")$X4, 
+     main = "Height of Mandible - Cuons",
+     xlab = "Mandible Height")
+hist(subset(dogsSub, G_name == "jack")$X4, 
+     main = "Height of Mandible - Jacks",
+     xlab = "Mandible Height")
+hist(subset(dogsSub, G_name == "m_dogs")$X4, 
+     main = "Height of Mandible - Modern Thai dogs",
+     xlab = "Mandible Height")
+hist(subset(dogsSub, G_name == "wolves")$X4, 
+     main = "Height of Mandible - Indian Wolves",
+     xlab = "Mandible Height")
+```
+
+#### Histograms: X5
+
+```{r fig.asp = 1}
+par(mfrow = c(2,2))
+hist(subset(dogsSub, G_name == "cuons")$X5, 
+     main = "Length of First Molar - Cuons",
+     xlab = "Molar Length")
+hist(subset(dogsSub, G_name == "jack")$X5, 
+     main = "Length of First Molar - Jacks",
+     xlab = "Molar Length")
+hist(subset(dogsSub, G_name == "m_dogs")$X5, 
+     main = "Length of First Molar - Modern Thai dogs",
+     xlab = "Molar Length")
+hist(subset(dogsSub, G_name == "wolves")$X5, 
+     main = "Length of First Molar - Indian Wolves",
+     xlab = "Molar Length")
+```
+
+#### Histograms: X7
+
+```{r fig.asp = 1}
+par(mfrow = c(2,2))
+hist(subset(dogsSub, G_name == "cuons")$X7, 
+     main = "Length of 1st-3rd Molars - Cuons",
+     xlab = "Molar Length", breaks = 6)
+hist(subset(dogsSub, G_name == "jack")$X7, 
+     main = "Length of 1st-3rd Molars - Jacks",
+     xlab = "Molar Length", breaks = 6)
+hist(subset(dogsSub, G_name == "m_dogs")$X7, 
+     main = "Length of 1st-3rd Molars - Modern Thai dogs",
+     xlab = "Molar Length", breaks = 6)
+hist(subset(dogsSub, G_name == "wolves")$X7, 
+     main = "Length of 1st-3rd Molars - Indian Wolves",
+     xlab = "Molar Length")
+```
+
+### Distributions - Pairwise Comparisons. {.tabset}
+
+#### All groups.
+
+```{r}
+pairs(dogsSub[,2:5], main = "Canine Skulls", 
+      pch = 21, bg = c("red", "green", "blue", "gold")[unclass(dogsSub$G_name)])
+```
+
+Groups appear approximately multivariate normal, as seen from the roughly regular boxplots and histograms of each individual variable as well as the elliptical patterns shown in the pairwise plots. There are some obvious deviations from normality, but given the small number of datapoints in each group, this is unsurprising. I will verify the assumption of normality using residuals after running the MANOVA model.
+
+#### Cuons.
+
+```{r}
+pairs(dogsSub[dogsSub$G_name == "cuons",2:5], main = "Cuon Skulls", 
+      pch = 21, bg = "red")
+```
+
+#### Golden jackals.
+
+```{r}
+pairs(dogsSub[dogsSub$G_name == "jack",2:5], main = "Golden Jackal Skulls", 
+      pch = 21, bg = "green")
+```
+
+#### Modern Thai dogs.
+
+```{r}
+pairs(dogsSub[dogsSub$G_name == "m_dogs",2:5], main = "Modern Thai Dog Skulls", 
+      pch = 21, bg = "blue")
+```
+
+#### Indian wolves.
+
+```{r}
+pairs(dogsSub[dogsSub$G_name == "wolves",2:5], main = "Indian Wolf Skulls", 
+      pch = 21, bg = "gold")
+```
+
+### Box's M.
+
+```{r}
+dogsBoxsM <- boxM(data = dogsSub[,2:5],
+            group = dogsSub[,1])
+dogsBoxsM
+# str(dogsBoxsM)
+```
+
+There is no evidence of dispersion between the covariance matrices (approx. $\chi^2$~`r dogsBoxsM$parameter`~ = `r round(dogsBoxsM$statistic, 3)`, p = `r round(dogsBoxsM$p.value, 2)`).
+
+### MANOVA.
+
+With the assumptions of multivariate normality and equal dispersion satisfied, I can continue with a MANOVA to compare skull shape between canine groups.
+
+```{r}
+# Making response variables into matrix for MANOVA function
+dogs.Xs <- as.matrix(dogsSub[,2:5])
+
+# Running MANOVA model.
+dogs.model <- manova(dogs.Xs ~ G_name, data = dogsSub)
+
+summary(dogs.model)$stats
+# str(summary(dogs.model))
+```
+
+My model shows that skull shape - as measured by X1, X4, X5, and X7 - differs significantly for at least one of my canine groups (approx. $F$ ~`r summary(dogs.model)$stats[1,1]`,`r summary(dogs.model)$stats[2,1]`~ = `r round(summary(dogs.model)$stats[1,3], 3)`, p < 0.001).
+
+### Pairwise MANOVA. {.tabset}
+
+Given the significant result of the MANOVA above, I here use a post-hoc pairwise MANOVA analysis with Bonferroni corrections for multiple comparisons.
+This will show which specific canine groups differ in skull shape.
+
+Bonferroni correction: $$\alpha/n $$ where $\alpha$ = 0.05 and $n$ = the number of tests being performed.
+
+With four groups, there are six possible pairings, as shown in the table below.
+Hence, our new $\alpha$ for each pairwise MANOVA is 0.05/6 = `r round(0.05/6, 4)`.
+
+|     |     |
+|-----|-----|
+| Cuons  | Golden Jackals  |
+| Cuons    |  Modern Thai dogs   |
+| Cuons    |  Indian wolves   |
+| Golden Jackals    | Modern Thai dogs    |
+| Golden Jackals    | Indian wolves    |
+| Modern Thai dogs    | Indian wolves    |
+
+
+#### Cuons + Golden Jackals.
+
+```{r}
+dogs.cj <- dogsSub |> 
+  filter(G_name %in% c("cuons","jack"))
+# dogs.cj
+
+dogs.cjXs <- as.matrix(dogs.cj[,2:5])
+
+# Running MANOVA model.
+dogs.cjM <- manova(dogs.cjXs ~ G_name, data = dogs.cj)
+
+summary(dogs.cjM)
+# str(summary(dogs.cjM))
+```
+Cuons and golden jackals differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.cjM)$stats[1,1]`,`r summary(dogs.cjM)$stats[2,1]`~ = `r round(summary(dogs.cjM)$stats[1,3], 2)`, p < 0.001).
+
+
+#### Cuons + Modern Thai Dogs.
+
+```{r}
+dogs.cm <- dogsSub |> 
+  filter(G_name %in% c("cuons","m_dogs"))
+# dogs.cj
+
+dogs.cmXs <- as.matrix(dogs.cm[,2:5])
+
+# Running MANOVA model.
+dogs.cmM <- manova(dogs.cmXs ~ G_name, data = dogs.cm)
+
+summary(dogs.cmM)
+```
+Cuons and modern Thai dogs differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.cmM)$stats[1,1]`,`r summary(dogs.cmM)$stats[2,1]`~ = `r round(summary(dogs.cmM)$stats[1,3], 2)`, p < 0.001).
+
+
+#### Cuons + Indian Wolves.
+
+```{r}
+dogs.cw <- dogsSub |> 
+  filter(G_name %in% c("cuons","wolves"))
+# dogs.cj
+
+dogs.cwXs <- as.matrix(dogs.cw[,2:5])
+
+# Running MANOVA model.
+dogs.cwM <- manova(dogs.cwXs ~ G_name, data = dogs.cw)
+
+summary(dogs.cwM)
+```
+
+Cuons and Indian wolves differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.cwM)$stats[1,1]`,`r summary(dogs.cwM)$stats[2,1]`~ = `r round(summary(dogs.cwM)$stats[1,3], 2)`, p < 0.001).
+
+#### Golden Jackals + Modern Thai Dogs.
+
+```{r}
+dogs.jm <- dogsSub |> 
+  filter(G_name %in% c("jack","m_dogs"))
+# dogs.cj
+
+dogs.jmXs <- as.matrix(dogs.jm[,2:5])
+
+# Running MANOVA model.
+dogs.jmM <- manova(dogs.jmXs ~ G_name, data = dogs.jm)
+
+summary(dogs.jmM)
+```
+
+Golden jackals and modern Thai dogs differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.jmM)$stats[1,1]`,`r summary(dogs.jmM)$stats[2,1]`~ = `r round(summary(dogs.jmM)$stats[1,3], 2)`, p < 0.001).
+
+#### Golden Jackals + Indian Wolves.
+
+```{r}
+dogs.jw <- dogsSub |> 
+  filter(G_name %in% c("jack","wolves"))
+# dogs.cj
+
+dogs.jwXs <- as.matrix(dogs.jw[,2:5])
+
+# Running MANOVA model.
+dogs.jwM <- manova(dogs.jwXs ~ G_name, data = dogs.jw)
+
+summary(dogs.jwM)
+```
+
+Golden jackals and Indian wolves differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.jwM)$stats[1,1]`,`r summary(dogs.jwM)$stats[2,1]`~ = `r round(summary(dogs.jwM)$stats[1,3], 2)`, p < 0.001).
+
+#### Modern Thai Dogs + Indian Wolves.
+
+```{r}
+dogs.mw <- dogsSub |> 
+  filter(G_name %in% c("m_dogs","wolves"))
+# dogs.cj
+
+dogs.mwXs <- as.matrix(dogs.mw[,2:5])
+
+# Running MANOVA model.
+dogs.mwM <- manova(dogs.mwXs ~ G_name, data = dogs.mw)
+
+summary(dogs.mwM)
+```
+
+Modern Thai dogs and Indian wolves differ in their skull shapes as measured by X1, X4, X5, and X7 (approx. $F$ ~`r summary(dogs.mwM)$stats[1,1]`,`r summary(dogs.mwM)$stats[2,1]`~ = `r round(summary(dogs.mwM)$stats[1,3], 2)`, p < 0.001).
+
+### Residuals.
+
+```{r}
+dogs.resid <- resid(dogs.model)
+# head(dogs.resid)
+```
+
+```{r fig.asp = 1}
+par(mfrow=c(2,2))
+hist(dogs.resid[,1], main = "X1 Residuals")
+hist(dogs.resid[,2], main = "X4 Residuals")
+hist(dogs.resid[,3], main = "X5 Residuals")
+hist(dogs.resid[,4], main = "X7 Residuals")
+
+```
+
+The residuals from the model for each response variable are roughly normal, reaffirming that the MANOVA was an appropriate choice for these data.
+
+## Data Visualization.
+
+```{r fig.asp=0.75}
+plot1 <- dogsSub |>
+  ggplot(aes(x = X1, y = X4)) +
+  geom_point(aes(color = X5, size = X7, shape = G_name)) +
+  ggtitle("Canine Skull Shape by Group") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_color_gradientn(colors = rainbow(4)) +
+  scale_shape_manual(values = c(15:18)) 
+plot1
+```
+
+```{r}
+#str(summary(dogsSub))
+#summary(dogsSub)
+
+means <- aggregate(dogsSub[,-1], FUN = mean, by = list(dogsSub$G_name))
+means.long <- means |>
+  gather(key = "Variable", value = "Mean", X1:X7, factor_key = TRUE)
+
+sds <- aggregate(dogsSub[,-1], FUN = sd, by = list(dogsSub$G_name))
+sds.long <- sds |>
+  gather(key = "Variable", value = "SD", X1:X7, factor_key = TRUE)
+
+mean.sd <- cbind(means.long, sds.long[,3])
+colnames(mean.sd) <- c("Group", "Variable", "Mean", "SD")
+
+pal1 <- PNWColors::pnw_palette("Sailboat", 4)
+
+plot2 <- mean.sd |>
+  ggplot(aes(x = Variable, y = Mean, fill = Group)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  ylab("Mean Measurement") +
+  ggtitle("Canine Skull Shape by Group") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_errorbar(aes(ymin = Mean - SD, ymax = Mean + SD), width=.2,
+                 position=position_dodge(.9)) +
+  scale_fill_manual(values = pal1, 
+                    name = "Canine Group", 
+                    labels = c("Cuons", "Jackals", "Modern Thai", "Wolves")) 
+plot2       
+
+```
+
+
+# Conclusions.
+
+
+
+Skull shape - measured by length of mandible (X1), height of mandible below first molar (X4), length of first molar (X5) and length of first to third molar (X7) - is significantly different between our four extant canine groups (approx. $F$ ~`r summary(dogs.model)$stats[1,1]`,`r summary(dogs.model)$stats[2,1]`~ = `r round(summary(dogs.model)$stats[1,3], 3)`, p < 0.001).
+
+Moreover, after pairwise MANOVA tests, I found that each group was significantly different in skull shape from every other group (see table below for test statistics and p-values), even when accounting for multiple comparisons with a Bonferroni correction of the alpha value.
+
+```{r}
+F.approx <- c(round(summary(dogs.cjM)$stats[1,3], 2),
+                  round(summary(dogs.cmM)$stats[1,3], 2),
+                  round(summary(dogs.cwM)$stats[1,3], 2),
+                  round(summary(dogs.jmM)$stats[1,3], 2),
+                  round(summary(dogs.jwM)$stats[1,3], 2),
+                  round(summary(dogs.mwM)$stats[1,3], 2))
+
+p.values <- c("< 0.001",
+              "< 0.001",
+              "< 0.001",
+              "< 0.001",
+              "< 0.001",
+              "< 0.001")
+
+Groups <- c("Cuons + Golden Jackals", "Cuons + Modern Thai Dogs", "Cuons + Indian Wolves", "Golden Jackals + Modern Thai Dogs", "Golden Jackals + Indian Wolves", "Modern Thai Dogs + Indian Wolves")
+
+Mpairs <- data.frame(Groups, F.approx, p.values)
+# Mpairs
+kbl(Mpairs)|>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+# Reflection.
+
+This assignment went fairly smoothly for me - the similarities to running a univariate ANOVA helped immensely. I ended up going with pairwise MANOVA tests to distinguish which groups were different, rather than using the Hotelling's T^2 test.
+
+I also really appreciate the resources going through the particulars of the math for these tests - they have helped me understand how and why we can make the inferences we do based on a test result.
+
+For the final draft, I amended the symbols in my first plot to better show the size differences for X7. I also included a profile bar plot of skull shape, grouped by variable and separated by color into canine group, along with error bars showing standard deviation.
+
+I will include fewer tests of normality in my assignments moving forward :).
+

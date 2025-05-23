@@ -1,0 +1,131 @@
+---
+title: "Mt. Baker Map"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning = FALSE, message = FALSE}
+library(sf)
+# rast()
+# st_read()
+library(terra)
+library(tidyverse)
+# ggplot()
+library(tidyterra)
+# geom_spatraster()
+# hypso.colors
+library(ggnewscale)
+library(metR)
+# geom_text_contour()
+library(PNWColors)
+```
+
+```{r}
+# Loading spatial data
+mtbDEM <- rast("Data/mtbDEM.tif")
+mtbDEM
+```
+
+mtbDEM is a SpatRaster file with 409 rows, 628 columns, and 1 layer. The resolution is 5m x 5m. The CRS projection used is UTM zone 10N. The raster includes elevation data ranging form 826m to 1689m.
+
+```{r}
+# Load hillshade data file
+mtbHill <- rast("Data/mtbHill.tif")
+mtbHill
+```
+
+mtbHill is a Hillshade spatial raster file with the same dimensions as the elevation data. Its CRS is also UTM zone 10N, so no projection transformations are needed. The hillshade values range from 0 to 1.
+
+```{r}
+# Load shape file for chair lifts
+chairs <- st_read("Data/mtbChairLines.shp")
+chairs
+
+# Adding "Chair" to each ID for easier labelling in plot
+chairs$id <- paste("Chair", as.character(chairs$id))
+
+# Calculating midpoints of each line for label alignment
+chair_mid <- st_centroid(chairs)
+
+# Creating color palette from PNWColors for labels and lines
+chair_col <- pnw_palette("Sunset2", 8)
+```
+
+The chair lift data is vector data, showing the lines from start to end of each chair lift. 
+
+```{r}
+# Loading buildings data
+buildings <- read.csv("Data/mtbLodges.csv")
+
+# Saving mtbDEM CRS 
+utm10nCRS <- st_crs(mtbDEM)
+
+# Converting building data to sf with same CRS as DEM data
+bldg_sf <- st_as_sf(buildings, coords = c("X", "Y"), crs = utm10nCRS)
+```
+
+```{r}
+# Mt Baker Map
+p1 <- ggplot() +
+  # Hillshade data
+  geom_spatraster(data = mtbHill) +
+  scale_fill_gradientn(colors = gray.colors(100,
+                                            start = 0.1,
+                                            end = 0.9), guide = "none") +
+  
+  # Elevation data
+  new_scale_fill() +
+  geom_spatraster(data = mtbDEM) +
+  scale_fill_hypso_c(name = "Elevation (m)", 
+                     palette = "colombia_hypso",alpha = 0.6) +
+  
+  # Contours
+  geom_spatraster_contour(data = mtbDEM, binwidth = 50, alpha = 0.75) +
+  geom_text_contour(data = mtbDEM, binwidth = 50, 
+                    aes(x = x, y = y, z = elev),
+                    check_overlap = TRUE,
+                    skip = 1,
+                    alpha = 0.75, 
+                    size = 2.5) +
+  
+
+  
+  # Chair Lifts
+  geom_sf(data = chairs, aes(color = factor(id)), show.legend = FALSE) +
+  scale_color_manual(values = chair_col) +
+  geom_sf_label(data = chair_mid,
+                aes(label = id, color = factor(id)),
+                show.legend = FALSE, 
+                alpha = 0.95,
+                size = 2.75) +
+
+  # Buildings
+  geom_sf(data = bldg_sf, size = 3) +
+  geom_sf_label(data = bldg_sf, aes(label = id,vjust = -0.4), 
+                alpha = 0.85) +
+  
+  # Margins and Theme
+  scale_x_continuous(limits = c(596210.7, 599350.7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5411132, 5413177), expand = c(0, 0)) +
+  labs(title = "Mt. Baker Map") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        axis.title = element_blank()) 
+  
+p1
+```
+
+

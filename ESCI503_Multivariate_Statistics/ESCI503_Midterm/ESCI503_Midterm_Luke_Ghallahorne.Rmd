@@ -1,0 +1,419 @@
+---
+title: "ESCI503 Midterm"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Preamble.
+
+## Honor Pledge.
+
+I affirm that I neither gave nor received any unauthorized help on this exam and that all work is my own.
+I did not consult generative AI.
+Signed: Luke Ghallahorne
+
+## Packages.
+
+I used the following packages and associated functions in this exam:
+
+| Package   | Functions    | Purpose   |
+|-----------|--------------|-----------|
+| tidyverse | ggplot()     |  plot generator |
+|           | filter()     |  keep rows that match condition |
+|           | gather()     |  reorder data frame |
+| GGally    | ggpairs()    |  pairs plot matrices |
+| PNWColors | pnwpalette() |  color palette generator |
+| vegan     | vegdist()    |  distance/dissimilarity matrices |
+|           | betadisper() |  homogeneity of dispersion: PCoA |
+|           | adonis2()    |  PERMANOVA |
+|           | permustats() |  extract permutation stats from adonis2() |
+
+
+```{r library, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(GGally)
+library(PNWColors)
+library(vegan)
+```
+
+# 2. Introduction.
+
+Invasion species are a major concern across ecosystems, both in their potential to alter native community compositions and to impact community recovery after the invader is removed. In this exam, I analyzed data from a study on the Eurasian cladoceran, *Bythotrephes longimanus*, an invasive zooplankton to Killarney Provincial Park in Ontario, Canada. In one lake in the park, researchers set up 144 enclosures of about 7000L volume each, seeded with zooplankton communities that were not invaded, had the invader present, or had the invader removed. They collected six samples (~150mL) from each enclosure over six weeks, after which zooplankton were identified and counted.
+
+## Questions.
+
+My questions for this analysis were: 
+
+- **Does zooplankton community composition differ across invasion states?**
+- **If so, which communities are different, and how do they differ?**
+
+
+## Data Summary.
+
+### Data Structure.
+
+```{r data.loading}
+# Load data file.
+zoo <- read.csv("Data/zooplankton.csv", stringsAsFactors = TRUE)
+```
+
+First, I examined the structure of the data and the variables in contains, as well as summary statistics for each response variable.
+
+```{r data.summary1, results = FALSE}
+# Data frame structure.
+str(zoo)
+# Summary statistics - min, mean, median, max, quartiles
+summary(zoo)
+```
+
+The data consist of 22 variables: the categorical predictor variable, invasion state, and 21 zooplankton species density as the response variables, measured in individuals per mL. Invasion state contains three groups, characterized as **IP** (Invader Present), **IR** (Invader Removed), or **NI** (No Invader).
+
+Zooplankton species counted were:
+*Chydorus sphaericus, Daphnia dubia, Daphnia mendotae, Daphnia retrocurva, Eubosmina tubicen, Holopedium glacialis, Sida crystallina, Eubosmina longispina, Diaphanosoma birgei, Alonella sp., Bosmina sp., Daphnia sp., Leptodiaptomus minutus, Skistodiaptomus oregonensis, Leptodiaptomus sicilis, Epischura lacustris, Diacyclops bicuspidatus* Thomas I, *Cyclops scutifer, Mesocyclops edax, Tropocyclops extensus,* and *Acanthocyclops robustus*.
+
+48 total samples were collected for each invasion state, though one sample from the No Invader (NI) enclosures was lost prior to sample analysis (n~NI~ = 47, n~IP~ = 48, n~IR~ = 48).
+
+Minima for each species are 0 ind./mL except for the cosmopolitan *Leptodiaptomus minutus* and *Diacyclops bicuspidatus* Thomas I, which has a minimum density of 22.2 and 31.6 ind./mL, respectively. Mean species densities range from a mere 1.1 ind./mL (*Chydorus sphaericus*) to 641.4 ind./mL (*Bosmina sp.*). Similarly, maxima have a very broad range, from 32.7 ind./mL (*Chydorus sphaericus*) to 8008.3 ind./mL (*Bosmina sp.*). This is not too surprising, as community data are often characterized by many zeros and periodic spikes in density.
+
+Given the wide range of species densities, I considered standardization to better represent community composition differences between invasion states, but first I examined the distributions of each variable.
+
+### Data Distribution and Correlation. {.tabset}
+
+I used pairs plot matrices to visualize the distribution of each species according to invasion state, as well as correlation between response variables. Due to the number of species in the data set, I constructed 3 pairs plots with 7 species each to look for general trends in the data.
+
+#### Pairs Plot Matrix 1.
+
+```{r pairs1, warning = FALSE, message = FALSE}
+# Pairs plot matrix - first 7 response variables
+ggpairs(zoo[,3:9], aes(color = zoo$invasion)) +
+  theme(strip.text.x = element_text(size = 5),
+        strip.text.y = element_text(size = 5),
+        axis.text = element_text(size = 5)) 
+```
+
+#### Pairs Plot Matrix 2.
+
+```{r pairs2, warning = FALSE, message = FALSE}
+# Pairs plot matrix - second 7 response variables
+ggpairs(zoo[,10:16], aes(color = zoo$invasion))+
+  theme(strip.text.x = element_text(size = 5),
+        strip.text.y = element_text(size = 5),
+        axis.text = element_text(size = 5)) 
+```
+
+#### Pairs Plot Matrix 3.
+
+```{r pairs3, warning = FALSE, message = FALSE}
+# Pairs plot matrix - final 7 response variables
+ggpairs(zoo[,17:23], aes(color = zoo$invasion))+
+  theme(strip.text.x = element_text(size = 5),
+        strip.text.y = element_text(size = 5),
+        axis.text = element_text(size = 5)) 
+```
+
+### 
+The distribution plots in the matrices (diagonal plots) show that there is strong divergence from normality in the species densities by invasion state. Furthermore, the pairwise scatter plots (lower diagonal plots) do not follow elliptical patterns within group, but tend strongly towards zeros in most cases. Since these are community count data, many zeros are to be expected.
+
+The correlation values of pairwise species comparisons (upper diagonal plots) are moderate but significant in a majority of pairs visualized above (r ~ +/- 0.2 - 0.6).
+
+These data have multiple response variables, most of which are moderately correlated, justifying the use of a multivariate analysis. However, due to the non-normality of the data, they do not meet the assumptions of a MANOVA. I used a PERMANOVA instead, which does not assume normality in the response variables.
+
+# 3. Comparing Distance/Dissimilarity Measures. {.tabset}
+
+PERMANOVA utilizes distance/dissimilarity measures to permute a sampling density to which I compared the data. There are many measures of distance that could be used, but some are less appropriate than others.
+
+Given that these are count data, counted or extrapolated to species density of individuals per mL, I expected a Bray-Curtis distance/dissimilarity measure to be most appropriate for the data. Bray-Curtis is a semi-metric dissimilarity measure that better accounts for many zeros in data than Euclidean or standardized Euclidean measures. It does so by reporting dissimilarity as the proportion of the linear difference by the total distance of both points from the origin - in essence, preserving the species richness and abundance of the community in the dissimilarity measurements.
+
+I created distance/dissimilarity matrices with Euclidean, standardized Euclidean, and Bray-Curtis to compare how they represent the data.
+
+I tested the dispersion between groups with an ANOVA of mean distances to the median of each invasion state.
+
+- $H_0$: Mean distance to the median is the same for each group.
+- $H_a$: At least one mean distance of the median of the three groups is not equal to the others.
+
+## Euclidean.
+
+```{r euclidean}
+# Save response variables as matrix for vegdist function
+Y <- as.matrix(zoo[,-c(1:2)])
+# Create distance/dissimilarity matrix
+zoo.dis.Eu <- vegdist(Y, method = "euclidean")
+# Save vector of predictor variables
+zoo.invasion <- zoo$invasion
+# Test for homogeneity of dispersion between groups - multivariate analogue of Levene's test. Principle Coordinates Analysis.
+zoo.mod.Eu <- betadisper(zoo.dis.Eu, zoo.invasion)
+# ANOVA to test for differences in mean distance to median for each group.
+anova(zoo.mod.Eu)
+# PCoA plot of first 2 Principle Coordinate Axes
+plot(zoo.mod.Eu)
+```
+
+## Standardized Euclidean.
+
+Standardized Euclidean first scales the response variables to Z scores using the sample mean and standard deviation:
+
+$$z_i = \frac{x_i-\overline{x}}{s}$$
+
+```{r standard.euclidean}
+# Scale response variable matrix using Z scores.
+Ys <- scale(Y)
+# Create distance/dissimilarity matrix
+zoo.dis.StEu <- vegdist(Ys, method = "euclidean")
+# Test for homogeneity of dispersion between groups - multivariate analogue of Levene's test. Principle Coordinates Analysis.
+zoo.mod.StEu <- betadisper(zoo.dis.StEu, zoo.invasion)
+# ANOVA to test for differences in mean distance to median for each group.
+anova(zoo.mod.StEu)
+# PCoA plot of first 2 Principle Coordinate Axes
+plot(zoo.mod.StEu)
+```
+
+## Bray-Curtis.
+
+```{r bray.curtis}
+# Create distance/dissimilarity matrix
+zoo.dis.BC <- vegdist(Y, method = "bray")
+# Test for homogeneity of dispersion between groups - multivariate analogue of Levene's test. Principle Coordinates Analysis.
+# Use betadisper() from vegan package
+zoo.mod.BC <- betadisper(zoo.dis.BC, zoo.invasion)
+# ANOVA to test for differences in mean distance to median for each group.
+anova(zoo.mod.BC)
+# PCoA plot of first 2 Principle Coordinate Axes
+plot(zoo.mod.BC)
+```
+
+# 
+
+With **Euclidean** measures, mean distance from the median is significantly different for at least one group ($F$~2,140~ = 7.85, p < 0.001), so I rejected the null hypothesis and saw no evidence for equal dispersion among groups. This is visualized in the severely uneven spread for each group in the PCoA plot above.
+
+**Standardized Euclidean** measures showed at least one group's mean distance from the median is significantly different ($F$~2,140~ = 21.5, p < 0.001). I again rejected the null hypothesis and could not assume equal dispersion of distance matrices. The PCoA plot shows that the distances are more evenly spread before, but No Invader (NI) distances are quite distinct from Invader Removed (IR) or Invader Present (IP) distances.
+
+**Bray-Curtis** measures showed at least one group's mean distance from the median is significantly different ($F$~2,140~ = 18.4, p < 0.001). Hence, I rejected the null hypothesis of equal dispersion. The PCoA plot show a much more appreciable range between points for each group, and better highlights the partial overlap between IR and IP, with NI sitting somewhat apart.
+
+Although dispersion is not equal, I continued with the Bray-Curtis distance/dissimilarity measures because they best represented the spread of points in each group versus Euclidean or standardized Euclidean measures. Equal dispersion is not an assumption of a PERMANOVA, which generates its own sampling distribution through permutations, so the best representation of spread in the data is sufficient to move forward with the analysis.
+
+# 4. Methods.
+
+For the PERMANOVA, I first set the seed to allow for replication with pseudo-random number generation. Then I ran a permutation analysis of variance with invasion state (NI, IP, or IR) as the main factor:
+$$Y \sim Invasion.State $$
+
+I used a PERMANOVA instead of a MANOVA to analyze differences in composition because the response variables are not normally distributed (see pairs plots above), and PERMANOVA does not assume a sampling distribution, but instead permutes one from the data. 
+
+PERMANOVA requires a dissimilarity measure, so I used Bray-Curtis measurements. This was because Bray-Curtis maintains abundance and richness of community data, and the distances better represent the spread of data points than Euclidean or standardized Euclidean measures (see PCoA plots above).
+
+The Null Hypothesis Significance Test for the PERMANOVA is:
+
+- **$H_0$:** Mean zooplankton species densities are equal among enclosures with No Invader (NI), Invader Present (IP), and Invader Removed (IR).
+$$H_0: \mu_{NI}=\mu_{IP}=\mu_{IR} $$
+- **$H_a$:** Zooplankton species densities vary significantly for at least one invasion state.
+- **$\alpha$** = 0.05
+
+I visualized the data compared to the permuted scenarios with a density plot to show the likelihood of getting the data through random variation.
+
+Should the PERMANOVA shows a significant result, I would then perform post-hoc pairwise PERMANOVAs of each invasion state (i.e., NI + IP, NI + IR, and IP + IR) to determine which states differ in community compositions. To account for multiple comparisons, I would use a Bonferroni correction to the alpha value.
+
+# 5. Results.
+
+### PERMANOVA. {.tabset}
+
+#### Test Results.
+
+```{r permanova}
+# Set seed: pseudo-random number generator. Allows for replication.
+set.seed(42)
+# Run permutation test with adonis2() - from vegan package
+zoo.PERM <- adonis2(Y ~ zoo$invasion, method = "bray")
+zoo.PERM
+```
+
+#### Density Plot.
+
+```{r permanova.plot}
+zoo.PERMstat <- permustats(zoo.PERM)
+densityplot(zoo.PERMstat)
+```
+
+### 
+
+The permutation analysis of variance showed that at least one invasion state's community composition is significantly different from the others (pseudo-$F$~2,240~ = 46.9, p < 0.001). Hence, I rejected the null hypothesis that community composition was equal among invasion states. Furthermore, invasion state explains approximately 40% of the variation in the data ($R^2$ = 0.401). 
+
+The density plot shows how the invasion state groupings seen in the data are highly unlikely to occur by random chance. The vertical line indicates the pseudo-$F$ for the data compared to permuted combinations.
+
+### Pairwise PERMANOVAs. {.tabset}
+
+Given the significant difference of at least one invasion state, I performed post-hoc pairwise PERMANOVAs to determine which states differed from each other. I adjusted my alpha value with Bonferroni corrections for multiple comparisons (n = 3).
+
+$$\alpha = \frac{0.05}{3} = 0.0167$$
+
+#### Test Results. {.tabset}
+
+##### NI + IP
+
+```{r permanova.NI.IP}
+set.seed(42)
+# Subsetting to include only NI and IP
+zoo.NIIP <- zoo |> 
+  filter(invasion %in% c("NI","IP"))
+# Save response as matrix
+Y.NIIP <- as.matrix(zoo.NIIP[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+zoo.PERM.NIIP <- adonis2(Y.NIIP ~ zoo.NIIP$invasion, method = "bray")
+zoo.PERM.NIIP
+```
+
+##### NI + IR
+
+```{r permanova.NI.IR}
+set.seed(42)
+# Subsetting to include only NI and IP
+zoo.NIIR <- zoo |> 
+  filter(invasion %in% c("NI","IR"))
+# Save response as matrix
+Y.NIIR <- as.matrix(zoo.NIIR[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+zoo.PERM.NIIR <- adonis2(Y.NIIR ~ zoo.NIIR$invasion, method = "bray")
+zoo.PERM.NIIR
+```
+
+##### IR + IP
+
+```{r permanova.IR.IP}
+set.seed(42)
+# Subsetting to include only NI and IP
+zoo.IRIP <- zoo |> 
+  filter(invasion %in% c("IR","IP"))
+# Save response as matrix
+Y.IRIP <- as.matrix(zoo.IRIP[,-c(1:2)])
+# Run permutation test with adonis2() - from vegan package
+zoo.PERM.IRIP <- adonis2(Y.IRIP ~ zoo.IRIP$invasion, method = "bray")
+zoo.PERM.IRIP
+```
+
+#### Density Plots. {.tabset}
+
+##### NI + IP
+
+```{r permanova.NI.IP.density}
+# Saving permutations for density plot.
+zoo.PERM.NIIPstat <- permustats(zoo.PERM.NIIP)
+# Visualizing permuted sampling distribution.
+densityplot(zoo.PERM.NIIPstat)
+```
+
+##### NI + IR
+
+```{r permanova.NI.IR.density}
+# Saving permutations for density plot.
+zoo.PERM.NIIRstat <- permustats(zoo.PERM.NIIR)
+# Visualizing permuted sampling distribution.
+densityplot(zoo.PERM.NIIRstat)
+```
+
+##### IR + IP
+
+```{r permanova.IR.IP.density}
+# Saving permutations for density plot.
+zoo.PERM.IRIPstat <- permustats(zoo.PERM.IRIP)
+# Visualizing permuted sampling distribution.
+densityplot(zoo.PERM.IRIPstat)
+```
+
+### 
+
+Pairwise PERMANOVAs showed significant differences between all three invasion states:
+
+| Invasion States | pseudo-$F$ | p-value    | $R^2$ |
+|-------|-------|-------|-------|
+| NI + IP | pseudo-$F$~(`r zoo.PERM.NIIP$Df[1]`,`r zoo.PERM.NIIP$Df[2]`)~ = `r round(zoo.PERM.NIIP$F[1], 1)` | p < `r zoo.PERM.NIIP$Pr[1]` | `r round(zoo.PERM.NIIP$R2[1], 3)` |
+| NI + IR | pseudo-$F$~(`r zoo.PERM.NIIR$Df[1]`,`r zoo.PERM.NIIR$Df[2]`)~ = `r round(zoo.PERM.NIIR$F[1], 1)` | p < `r zoo.PERM.NIIR$Pr[1]` | `r round(zoo.PERM.NIIR$R2[1], 3)` |
+| IR + IP | pseudo-$F$~(`r zoo.PERM.IRIP$Df[1]`,`r zoo.PERM.IRIP$Df[2]`)~ = `r round(zoo.PERM.IRIP$F[1], 1)` | p < `r zoo.PERM.IRIP$Pr[1]` | `r round(zoo.PERM.IRIP$R2[1], 3)` |
+
+Invasion state explained 52.5% of the variation between enclosures with no invaders and those with invaders present, 32.8% of variation between no invaders and invaders removed, and only 5.7% of variation between invaders present and invaders removed ($R^2$ values listed above).
+
+Density plots show the sample distribution of pseudo-$F$ test statistics.  The vertical line indicates the pseudo-$F$ for the data compared to permuted combinations. Test statistics are much more rare for NI + IP and NI + IR than IR + IP, though each was a significantly rare result from the permuted sample distribution.
+
+### Plots.
+
+```{r zoo.plot.setup, results = FALSE}
+# Creating a vector of means for each zooplankton species by invasion state.
+zoo.means <- aggregate(zoo[,-c(1:2)], FUN = mean,
+                        by = list(zoo$invasion))
+zoo.means
+
+# Tidying the data into long format.
+means.long <- zoo.means |>
+  gather(key = "Species", value = "Mean", 2:22,
+         factor_key = TRUE)
+colnames(means.long) = c("Invasion.State", "Species", "Mean")
+means.long
+
+# Setting up color palette.
+pal1 <- pnw_palette("Bay", 21, type = "continuous")
+```
+
+```{r zoo.plot2}
+# Stacked bar plot to visualize differences in composition - Total Densities
+zooplot2 <- means.long |>
+  ggplot(aes(x = Invasion.State, y = Mean, fill = Species)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = rev(pal1)) +
+  guides(fill = guide_legend(ncol = 1)) +
+  labs(x = "Invasion State", 
+       y = "Community Density (Individuals/mL)",
+       title = "Zooplankton Community Composition") +
+  theme(legend.position = "right",
+        legend.text = element_text(size=7),
+        legend.key.size = unit(0.5, "cm"),
+        plot.title = element_text(hjust = 0.5)) +
+  annotate(geom = "text", x = 0.75, y = 900, label = "a") +
+  annotate(geom = "text", x = 1.75, y = 2300, label = "b") + 
+  annotate(geom = "text", x = 2.75, y = 2600, label = "c")
+
+zooplot2
+```
+
+**Figure 1.** Mean zooplankton community composition (individuals/mL) by invasion state. Letters indicate significant differences from pairwise PERMANOVA tests (see table above). Colors show altered proportions and abundance of zooplankton species when in the presence of an invader or after its removal. Presence of an invader (IP) shows a much smaller overall community size than recovered (IR) or uninvaded (NI) communities.
+
+```{r zoo.plot1}
+# Stacked bar plot to visualize differences in composition - Proportions
+zooplot <- means.long |>
+  ggplot(aes(x = Invasion.State, y = Mean, fill = Species)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_manual(values = rev(pal1)) +
+  guides(fill = guide_legend(ncol = 1)) +
+  labs(x = "Invasion State", 
+       y = "Proportion of Community Density",
+       title = "Zooplankton Community Composition (Proportions)") +
+  theme(legend.position = "right",
+        legend.text = element_text(size=7),
+        legend.key.size = unit(0.5, "cm"),
+        plot.title = element_text(hjust = 0.5))
+  
+zooplot
+```
+
+**Figure 2.** Mean zooplankton community species composition as a proportion of total community by invasion state. Shifts in relative abundances of different zooplankton species can be seen across the different invasion states, particularly in the abundance of *Bosmina sp.*, *Daphnia sp.*, and *Epischura lacustris*.
+
+# 6. Conclusions.
+
+These data show that the invasive Eurasian cladoceran, *Bythotrephes longimanus*, had a significant impact on zooplankton community composition in Killarney Provincial Park lakes, as well as community recovery after its removal. Community composition differed significantly between enclosures with no invader, invaders present, and invaders removed (pseudo-$F$~2,240~ = 46.9, p < 0.001), and invasion state explained 40% of the variation between groups ($R^2$ = 0.401). Furthermore, pairwise tests showed that an invaded community differed from both uninvaded and post-invader compositions (pseudo-$F$~(`r zoo.PERM.NIIP$Df[1]`,`r zoo.PERM.NIIP$Df[2]`)~ = `r round(zoo.PERM.NIIP$F[1], 1)`, p < `r zoo.PERM.NIIP$Pr[1]` and pseudo-$F$~(`r zoo.PERM.IRIP$Df[1]`,`r zoo.PERM.IRIP$Df[2]`)~ = `r round(zoo.PERM.IRIP$F[1], 1)`, p < `r zoo.PERM.IRIP$Pr[1]`, respectively). Invasion state explained over half of the variation between uninvaded and invaded enclosures ($R^2$ = 0.525) and 39% ($R^2$ = 0.388) between invaded and invader-removed communities. Recovery after invasion did not result in communities with the same composition as uninvaded communities (pseudo-$F$~(`r zoo.PERM.NIIR$Df[1]`,`r zoo.PERM.NIIR$Df[2]`)~ = `r round(zoo.PERM.NIIR$F[1], 1)`, p < `r zoo.PERM.NIIR$Pr[1]`), but invasion state only explained 5.7% of the variation between those communities ($R^2$ = 0.057). Figure 1 exemplifies how much the community composition and overall zooplankton abundance were impacted by the presence of *Bythotrephes longimanus*, with an altered community and significantly fewer individuals in the presence of the invader. When the invader was removed, the community density increased closer to uninvaded levels, with different proportions of zooplankton species. Figure 2 highlights the changes in population proportions for each community.
+
+
+# 7. Reflection.
+
+This midterm felt quite straightforward. There weren't any surprises in the data, though it was fun to work with a data set with so many variables (especially zooplankton, which are what I work with). 
+
+

@@ -1,0 +1,325 @@
+---
+title: 'Multiple Regression: Diagnostics and Plotting'
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = 'C:/Users/lukeg/OneDrive - Western Washington University/Esci502_WD/HW_Linear_Models/Data')
+```
+
+```{r include = FALSE}
+library(tidyverse)
+```
+
+## Prelude
+We have moved from simple linear models to multiple regression models with more than one predictor being tested for explaining the observed variation in the data. Some of this variation is systematic (that explained by a variable of theoretical importance, e.g., temperature, where evaporation~temperature), while other variation remains unexplained (either because we didn’t measure it directly or because we don’t know what is causing it). We can add covariates to reduce the unexplained variance, but need to do so with care. In an experimental setting, you will design an experiment with the most likely explanatory variables included in the design. But in an observational setting, we may need to select for which variables help in explaining the distribution of our observations. In our simple example with evaporation, we know temperature is important, but also may have access to other variables like humidity, wind speed, or the like. But which of these helps explain or observed evaporation rates? We would construct a model to find out.
+
+Today we will explore some of the diagnostics associated with model fitting and touch on model selection. You are not done with fitting an lm until your assessed the output and the residuals. We can select a model based on hypothesis tests (t, F), R2
+, and backward/forward selection, or we can use an information theoretic approach. Information theory helps us answer the question: what is the probability of the hypothesis given our data (e.g., P[H1 | Data])? Information-theoretic analyses, like Bayesian analyses, are grounded in likelihood estimates–we need the log likelihood as estimated with Maximum Likelihood (ML). This is how R fits some models behind the scenes: when data are normally distributed, ML and Ordinary Least Squares (OLS) converge on the same solution–a lot of matrix algebra is involved that we won’t get into. At any rate, Akaike’s Information Criterion (AIC) is one I-T approach for model selection and we will get into that. There is a fairly accessible paper on I-T approaches here.
+
+Think about your workflow: 
+
+ * assess the data to know what you have 
+
+ * fit your model
+
+ * check your model 
+
+ * interpret your findings
+ 
+Sure, there is more to it than this but we’ve already covered a lot of the nuance. It’s up to you to find a system that works for you to make sure you methodically complete the analysis.
+
+## Simple Refresher
+```{r}
+library(jtools)
+library(sjPlot)
+library(car)
+```
+```{r}
+trees
+dim(trees)
+str(trees)
+summary(trees)
+```
+
+```{r}
+plot(trees)
+```
+
+```{r}
+hist(trees$Volume)
+# maybe log-normal; not very normal
+```
+```{r}
+hist(trees$Girth)
+# normal-ish
+```
+
+```{r}
+hist(trees$Height)
+# Normal
+```
+```{r}
+plot(trees$Girth, trees$Volume)
+# pretty linear (+)
+```
+
+Create a simple linear regression of volume as a function of girt:
+```{r}
+m1 <- lm(Volume ~ Girth, data = trees)
+summary(m1)
+```
+```{r}
+anova(m1)
+```
+Girth is a significant predictor of volume. The slope of the model is 5.066 and is significantly different from 0 (t = 20.48, p < 0.001). The high $R^2$ value (0.935) shows that the majority of the variance in volume is explained by girth ($F$~(1,29)~ = 419.36, p < 0.001).
+
+```{r fig.asp=1.25}
+par(mfrow = c(2,2))
+plot(m1)
+```
+
+The residuals are drawn down a bit in the middle - not equally scattered.
+There is some variation in the QQ plot around the tails, but our data set is small.
+The standardized residuals look pretty good.
+There does appear to be one point that has high leverage - a high predictor value.
+Let's check point 31.
+
+```{r}
+trees[21:31,] #choosing ten observations to compare with point 31
+```
+Seems a bit high.
+
+```{r}
+mean(trees$Volume, na.rm = TRUE)
+summary(trees$Volume)
+```
+The 3rd quartile value is 37.3 and the max is 77. Observation 31 was a giant.
+
+We've investigated: it seems like we just have a big tree. Let's proceed for now.
+
+Back to the lm:
+```{r}
+m1 <- lm(Volume~Girth, data = trees)
+summary(m1)
+```
+```{r}
+anova(m1)
+```
+
+We have done our due diligence and followed the model through. Now we make some inference and interpret our findings:
+
+Tree volume is a function of girth. Our linear model (Volume=-36.94 + 5.07Girth), showed that for each addition inch in diameter [put “trees” in the help search and it will give you all the info on the data set], tree volume of timber increases ~5 cubic feet (Slope=5.066, t=20.48, p<0.001). Tree girth explains significant variation in tree volume ($R^2$=0.93) and tree girth is a good predictor of volume (F=419.4, p<0.001). Thus, black cherry tree board feet can be determined by girth (DBH).
+
+Okay, that was a simple example. Let’s bump it up with an additional variable:
+
+```{r}
+m2 <- lm(Volume ~ Girth + Height, data = trees)
+summary(m2)
+```
+With both girth and height in the model, both appear to have a significant impact on volume. The slope for girth is 4.708 and is significantly different from 0 (t = 17.816, p < 0.001). The slope for height is 2.607 and is also significantly different from 0 (t = 2.607, p < 0.0145). The model explains a great deal of the variance in volume and is well fit ($R^2$ = 0.944, $F$~(2,28)~ = 255, p < 0.001).
+
+Now we can drill down into the 2 explanatory vars. a bit more using anova(). This is different from aov(), which is used for a true ANOVA analysis. With anova() we are looking at the amount of variation explained by each variable related to the unexplained residual error. The anova() function is almost like a post-hoc test to determine which of the variables in the model contribute to the overall model fit. There is some info here:. If you go to the help and input “anova” you’ll see that for this function analysis of variance (or deviance) tables are computed for one or more fitted model objects.
+
+```{r}
+anova(m2)
+```
+Both girth and height are significant predictors. That is, a model with these variables is better than one without. And the MSE is very low.
+
+```{r fig.asp=1.25}
+par(mfrow=c(2,2))
+plot(m2)
+```
+
+These diagnostic plots look okay - a bit wonky in spots, but nothing systematic, especially given our small 31 observations.
+
+There is one concern here - are girth and height collinear?
+
+```{r}
+cor.test(trees$Girth, trees$Height)
+```
+
+Girth and height are roughly positively correlated, but with an r of 0.519, it is a moderate enough correlation. We can include the interaction with a *.
+
+### Interaction
+What about a potential interaction between height and girth? We can evaluate that. First, let's define an interaction: it means the slope of one continuous variable related to the response variable changes as the values of a second continuous predictor variable changes. Darn. You can probably see the problem here.
+
+```{r}
+m3 <- lm(Volume ~ Girth * Height, data = trees)
+summary(m3)
+```
+```{r}
+anova(m3)
+```
+It seems there is an interaction effect: girth and height are correlated. As girth increases, height is also increasing but at a different rate.
+
+```{r}
+plot(trees$Girth, trees$Height)
+```
+
+```{r}
+ggplot(trees, aes(x = Girth, y = Height)) +
+  geom_point(aes(col=Volume))+
+  theme_bw()
+```
+Neither of these plots really shows us this interaction very well.
+
+```{r}
+library(sjPlot)
+plot_model(m3, type="int")
+```
+Here you can nicely see that at different values of height, the slopes are different. But these are only two potential values of height that are selected, and height is continuous. So we need to carefully consider the values we want to plot.
+
+```{r}
+summary(trees$Height) #63-87 (plotted), mean = 76
+```
+So we can try a different method, which uses the mean and sd:
+
+```{r}
+plot_model(m3, type ="int", mdrt.values = "meansd")
+```
+This gives us a range of values from the mean +/- 1 sd; we can see that the slope for Volume~Girth is steepest when height is greatest. This makes intuitive sense (more board feet come from bigger trees in height and girth).
+
+Back to the models. We aren't sure which is the best model. Model 3 has the highest $R^2$ value but it also has a pesky interaction term. Here we can interpret that, but in some cases, it may be hard to interpret the interaction so thought needs to be given to its inclusion and outcomes.
+
+So, is m3 the best? Maybe. It also has the highest number of parameters (3 + intercept = 4).
+
+
+## Model Selection
+So here is where we desire some unbiased (or less biased) way of selecting the best model. We can compare models - if they use the same exact input data - with Akaike's Information Criterion. By now, you know something about AIC, including its equation:
+
+$AIC = 2k - 2ln(\hat{L})$
+
+Which is 2 times the number of parameters (k) minus 2 times the negative log likelihood ($\hat{L}$). 
+
+Which model would you prefer using AIC? The implementation is simple.
+
+```{r}
+AIC(m1, m2, m3)
+```
+
+Recall that AIC is a model selection tool based on "badness of fit" where lower AIC values are preferred. In general, models with $\Delta$AIC < 3 are similarly supported (one would not be preferred over the other). Here m3 has the lowest AIC at 155.5 and it is well below the others. So, we can say this is the best fitting model.
+
+Being king of dipshits doesn't mean you're smart: there will always be a winner with AIC, but it still could be a bad model.
+
+## Where to go from here.
+We may be able to do better. We know the response variable is lognormal-ish. Let's fit model 3, but with ln(Volume).
+
+```{r}
+m4 <- lm(log(Volume) ~ Girth * Height, data = trees)
+summary (m4)
+```
+The $R^2$ is higher for this model, showing that it is a better fit to the data than the former model.
+
+```{r fig.asp=1.2}
+par(mfrow=c(2,2))
+plot(m4)
+```
+
+What about the QQ plot and the residuals?
+The leverage is still a bit off due to some influential points, but the other plots look good.
+
+Should we check the AIC?
+
+```{r}
+AIC(m4)
+```
+Why is this so low? This should be a sign that something is off
+
+With AIC, you can only compare models with the SAME input data. When we log transformed the variable, we fundamentally changed the data. Bad, very bad. Don't do this! See below for how different the data are:
+
+```{r}
+summary(trees$Volume)
+```
+```{r}
+summary(log(trees$Volume))
+```
+
+## Another approach: Stepwise Regression.
+Stepwise regression. We are going to use another built in dataset, mtcars. We will build a linear model of MPG ~ displacement, horsepower, weight, and cylinders, and determine which terms should stay and which should go. We start with the fully saturated model (the full model) as opposed to the null model which would be the mean of a y (a horizontal line).
+
+```{r}
+mtcars
+summary(mtcars)
+dim(mtcars)
+```
+There are 11 variables with 32 data points. Gear, carb, vs, cyl, and am are categorical variables, while mpg, disp, hp, drat, wt, and qsec are continuous.
+
+We start with the full model.
+```{r}
+str(mtcars)
+c1 <- lm(mpg ~ cyl + disp + hp + wt, data = mtcars)
+summary(c1)
+```
+```{r}
+anova(c1)
+```
+Displacement has the least significant test of slope, but the ANOVA suggests hp is actually not contributing. We'll use the F test to sequentially drop terms. In stepwise regression, you sequentially delete terms that aren't significant until you arrive at the most parsimonious model - the one with the most significance that uses the fewest terms.
+
+Now do that (in reality, you would evaluate each model for assumptions - in the interest of time, just fit them).
+
+```{r}
+c2 <- lm(mpg ~ cyl + disp + wt, data = mtcars)
+summary(c2)
+```
+Dropped hp, as it had the least significant impact on the fit of the model ($F$~(1,27) = 1.485, p < 0.233) and on the response variable (t = -1.69, p < 0.10).
+
+```{r}
+anova(c2)
+```
+
+We drop the next least significant term:
+```{r}
+c3 <- lm(mpg ~ cyl + wt, data = mtcars)
+summary(c3)
+```
+```{r}
+anova(c3)
+```
+The final model predicts miles per gallon as a function of number of cylinders and weight. The $R^2$ is lower than the full model and has a higher residual standard error. While it is a better fit than c2, it does not appear to be a better fit for the data than c1.
+
+Let's evaluate the models using AIC>
+```{r}
+AIC(c1, c2, c3)
+```
+
+What do you conclude? Here, there is little difference in AIC score and thus, we have support for all three candidate models. If you were truly using the principle of parsimony, you would select the one with the least parameters, model c3, as the preferred.
+
+Yet another approach is to use an automated function drop1(). Here you put in the full model and drop1() iterates through the possible models to tell you which terms are preferred. The output is a little weird to interpret because the AIC is given for a model without that term. So, AIC for a model without wt is highest, so we know weight is actually the best predictor.
+
+```{r}
+drop1(c1)
+```
+## Collinearity Redux: VIF
+Now that we have a preferred model (let's say c3 for the sake of argument), we want to check for collinearity in the predictors. To do that, we can calculate the variance inflation factor (VIF), which is an estiamte of collinearity in the predictors. VIF measures how much the behavior (variance) of an independent variable is influenced, or inflated, by its interaction/correlation with the other independent variables. Some us a cut-off of 3, others of 5; the higher, the more correlated.
+
+```{r}
+library(car)
+vif(c3)
+```
+
+Here we see both predictors have VIF < 5, so we are in good shape.
+
+## Plotting partial regression plots: how to deal with too many variables.
+
+We can easily plot our regression using ggplot, but we have too many variables and can only plot x and y. So, we need to reach for a more advanced tool set. 
+
+We are going to use the mtcars data to make some partial regression plots, that is a scatterplot of $y$ and $x_i$ when the other xs are held constant (this is how we estimated the coefficients after all). By hand this is a real chore, but one that may need to be undertaken.
+
+There are lots of plotting packages out there.
+
+```{r}
+c3$coefficients
+```
+
+
+
+
+
+
+
+
+
+

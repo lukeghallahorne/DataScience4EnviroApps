@@ -1,0 +1,488 @@
+---
+title: 'Assignment 6: Clustering'
+author: "Luke Ghallahorne"
+date: '`r Sys.Date()`'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE, warning = FALSE}
+# Tidyverse
+library(tidyverse)
+# Pairs plots
+library(GGally)
+# Add colors to dendrogram
+library(dendextend)
+# 3D Plot manipulation
+library(plotly)
+# Map Library
+library(cshapes)
+```
+
+```{r results = FALSE}
+# Creating color palettes
+##### 
+# Create color palette for labels
+pal1 <- PNWColors::pnw_palette("Bay", 25)
+# Create color palette for boxes
+pal2 <- PNWColors::pnw_palette("Bay", 6)
+#####
+```
+
+# Introduction
+The data for this assignment consist of protein consumption estimates for European countries in the year 1973. Consumption is represented by average grams of protein per person per day, categorized by food source by country. The last column totals protein consumption per person per day. 
+
+Protein sources include:
+
+- Red meat
+- White meat
+- Eggs
+- Milk
+- Fish
+- Cereals
+- Starches
+- Nuts and oils
+- Fruits and vegetables
+
+I will use these data to assess the questions:
+
+- **Do countries cluster by protein consumption in 1973?**
+- **Are there any patterns within groups, and do those patterns relate to any attributes of those countries?**
+
+```{r}
+# Load data with Country as factor
+protein.df <- read.csv("Data/protein_1.csv", stringsAsFactors = TRUE)
+```
+
+```{r results = FALSE}
+# Summarize data
+# Minimum, quantiles, mean, median
+summary(protein.df)
+# Data structure
+str(protein.df)
+```
+
+```{r message = FALSE}
+# Pairs plot matrix to visualize distributions and correlations between response variables (including Total Protein)
+ggpairs(protein.df[,-1])
+```
+
+Pairs plot matrix of pairwise comparisons of protein sources and total protein. Diagonal plots show variable distributions. Lower diagonal plots contain pairwise scatterplots. Upper diagonal plots show Pearson's correlation coefficients among pairs of variables.
+
+The pairs plot matrix shows that all response variables are roughly normally distributed. Some bimodality is present in WhiMeat, Eggs, and FruVeg, and some skew can be seen for Fish, Cereals, and NutsOils. However, pairwise scatterplots do not show any severe departures from normality. Correlation fluctuates between different variables but is frequently significant, justifying the use of multivariate methods.
+
+# Methods
+
+## Ordination {.tabset}
+
+To ordinate the dataset and better visualize relationships between countries, I performed Principle Component Analysis using prcomp(). I created a distance/dissimilarity matrix with Euclidean distances and standardized to scale the variables. Because I standardized, I included total protein as a response variable in the PCA so as not to lose any patterns in overall protein consumption. When visualizing the data, I included the first 3 PCs because of the cumulative variance explained and because the 3rd PC helps to separate points at the lower end of PC1.
+
+```{r results = FALSE}
+# Save response variables as matrix - EXCLUDING TOTAL PROTEIN
+protein.mat <- as.matrix(protein.df[,-1])
+# Attach country names to rows
+rownames(protein.mat) <- protein.df[,1]
+
+# Run PCA on scaled data matrix
+protein.pca <- prcomp(protein.mat, scale = TRUE)
+# Summarize PCA - Standard Deviations + Proportion of Variance Explained
+summary(protein.pca)
+# Show eigenvectors (principle components)
+protein.pca$rotation
+
+# Save first two principle component scores and country as dataframe for plotting
+pca.df <- data.frame(Country = protein.df[1],
+                     PC1 = protein.pca$x[,1],
+                     PC2 = protein.pca$x[,2],
+                     PC3 = protein.pca$x[,3])
+pca.df
+```
+
+### PC1 vs PC2
+
+```{r}
+# Plot PC1 vs PC2 with Country labels
+ggplot(pca.df, aes(x = PC1, y = PC2, label = Country)) +
+  geom_text(size = 3, nudge_y=0.2) +
+  geom_point() +
+  ggtitle("Protein Consumption in European Countries (1973) - PC1 vs PC2")
+```
+
+### PC2 vs PC3
+
+```{r}
+# Plot PC2 vs PC3 with Country labels
+ggplot(pca.df, aes(x = PC2, y = PC3, label = Country)) +
+  geom_text(size = 3, nudge_y=0.2) +
+  geom_point() +
+  ggtitle("Protein Consumption in European Countries (1973) - PC2 vs PC3")
+```
+
+### PC1 vs PC3
+
+```{r}
+# Plot PC1 vs PC3 with Country labels
+ggplot(pca.df, aes(x = PC1, y = PC3, label = Country)) +
+  geom_text(size = 3, nudge_y=0.2) +
+  geom_point() +
+  ggtitle("Protein Consumption in European Countries (1973) - PC1 vs PC3")
+```
+
+## Cluster Analysis
+
+To cluster the countries, I used hierarchical clustering. I compared dendrograms of a variety of linkages (average, Ward's, single, and complete) and settled on the link with the most even spread of groupings - Ward's linkage. I visualized multiple sets of clusters with group numbers ranging from 3 to 7 using rect.hclust(). I gauged the most appropriate number of clusters subjectively, deciding on number of clusters by geographic and economic patterns from previous knowledge. Finally, I used the group assignments from the cluster analysis to plot protein consumption across the first 3 PCs using pairwise plots. I chose pairwise plots over a 3-dimensional plot because they more clearly show the datapoints and their distances to other points.
+
+```{r}
+# Scale and center response variable matrix
+protein.s <- scale(protein.mat)
+# Create distance/dissimilarity matrix with Euclidean distance measures
+protein.dist <- dist(protein.s)
+```
+
+### Exploratory Dendrograms {.tabset}
+
+#### Ward's
+```{r}
+# Hierarchical clustering using WARD'S LINKAGE
+protein.hcl <- hclust(protein.dist, "ward.D2")
+
+# Save clusters as dendrogram object
+protein.dend <- as.dendrogram(protein.hcl)
+
+# Assign colors to labels while maintaining order
+labels_colors(protein.dend) <- pal1[order.dendrogram(protein.dend)]
+
+# Plot dendrogram
+plot(protein.dend)
+rect.hclust(protein.hcl, k = 3, border = pal2[1])
+rect.hclust(protein.hcl, k = 4, border = pal2[2])
+rect.hclust(protein.hcl, k = 5, border = pal2[3])
+rect.hclust(protein.hcl, k = 6, border = pal2[4])
+rect.hclust(protein.hcl, k = 7, border = pal2[5])
+
+```
+
+Clustering Key:
+
+- Purple: k = 3
+- Blue: k = 4
+- Yellow: k = 5
+- Orange: k = 6
+- Red: k = 7
+
+Country labels were colored according to original order in the dataset to better identify changes in groups depending on the chosen linkage.
+
+#### Average
+```{r}
+#####
+# Hierarchical clustering using AVERAGE LINKAGE
+protein.hcl <- hclust(protein.dist, "average")
+
+# Save clusters as dendrogram object
+protein.dend <- as.dendrogram(protein.hcl)
+
+# Assign colors to labels while maintaining order
+labels_colors(protein.dend) <- pal1[order.dendrogram(protein.dend)]
+
+# Plot dendrogram
+plot(protein.dend)
+rect.hclust(protein.hcl, k = 3, border = pal2[1])
+rect.hclust(protein.hcl, k = 4, border = pal2[2])
+rect.hclust(protein.hcl, k = 5, border = pal2[3])
+rect.hclust(protein.hcl, k = 6, border = pal2[4])
+rect.hclust(protein.hcl, k = 7, border = pal2[5])
+
+```
+
+Clustering Key:
+
+- Purple: k = 3
+- Blue: k = 4
+- Yellow: k = 5
+- Orange: k = 6
+- Red: k = 7
+
+Country labels were colored according to original order in the dataset to better identify changes in groups depending on the chosen linkage.
+
+#### Single
+```{r}
+# Hierarchical clustering using SINGLE LINKAGE (NEAREST NEIGHBOR)
+protein.hcl <- hclust(protein.dist, "single")
+
+# Save clusters as dendrogram object
+protein.dend <- as.dendrogram(protein.hcl)
+
+# Assign colors to labels while maintaining order
+labels_colors(protein.dend) <- pal1[order.dendrogram(protein.dend)]
+
+# Plot dendrogram
+plot(protein.dend)
+rect.hclust(protein.hcl, k = 3, border = pal2[1])
+rect.hclust(protein.hcl, k = 4, border = pal2[2])
+rect.hclust(protein.hcl, k = 5, border = pal2[3])
+rect.hclust(protein.hcl, k = 6, border = pal2[4])
+rect.hclust(protein.hcl, k = 7, border = pal2[5])
+```
+
+Clustering Key:
+
+- Purple: k = 3
+- Blue: k = 4
+- Yellow: k = 5
+- Orange: k = 6
+- Red: k = 7
+
+Country labels were colored according to original order in the dataset to better identify changes in groups depending on the chosen linkage.
+
+#### Complete
+```{r}
+# Hierarchical clustering using COMPLETE LINKAGE (FURTHEST NEIGHBOR)
+protein.hcl <- hclust(protein.dist, "complete")
+
+# Save clusters as dendrogram object
+protein.dend <- as.dendrogram(protein.hcl)
+
+# Assign colors to labels while maintaining order
+labels_colors(protein.dend) <- pal1[order.dendrogram(protein.dend)]
+
+# Plot dendrogram
+plot(protein.dend)
+rect.hclust(protein.hcl, k = 3, border = pal2[1])
+rect.hclust(protein.hcl, k = 4, border = pal2[2])
+rect.hclust(protein.hcl, k = 5, border = pal2[3])
+rect.hclust(protein.hcl, k = 6, border = pal2[4])
+rect.hclust(protein.hcl, k = 7, border = pal2[5])
+
+```
+
+Clustering Key:
+
+- Purple: k = 3
+- Blue: k = 4
+- Yellow: k = 5
+- Orange: k = 6
+- Red: k = 7
+
+Country labels were colored according to original order in the dataset to better identify changes in groups depending on the chosen linkage.
+
+# Results {.tabset}
+
+I determined that 6 clusters formed with Ward's linkage was the best grouping for these data. The groups all include at least 2 countries, and most are grouped together in recognizable geographic and economic patterns.
+
+```{r}
+# Using WARDS LINKAGE going forward
+# Hierarchical clustering using WARD'S LINKAGE
+protein.hcl <- hclust(protein.dist, "ward.D2")
+
+# Save clusters as dendrogram object
+protein.dend <- as.dendrogram(protein.hcl)
+
+# Color branches by number of clusters (K = 6)
+protein.dend <- protein.dend |>
+  color_branches(k = 6, col = pal2) |>
+  color_labels(k = 6, col = pal2)
+# Plot dendrogram
+plot(protein.dend)
+```
+
+My final dendrogram shows 6 groups of countries, with most separations occurring between heights 5 and 6. Colors show grouped countries and corresponding branches in the dendrogram. 
+
+```{r message = FALSE, warning = FALSE}
+protein.cut <- as.factor(cutree(protein.hcl, k = 6))
+pca.df <- data.frame(Country = protein.df[1],
+                     PC1 = protein.pca$x[,1],
+                     PC2 = protein.pca$x[,2],
+                     PC3 = protein.pca$x[,3],
+                     Cluster = protein.cut)
+#pca.df
+```
+
+## PC1 vs PC2
+
+```{r message = FALSE, warning = FALSE}
+plot.final1 <- pca.df |>
+  ggplot(aes(x = PC1, y = PC2, color = Cluster, label = Country)) +
+  geom_text(size = 3, vjust = 1) +
+  geom_point() +
+  scale_color_manual(values = pal2) +
+  theme_minimal() +
+  stat_ellipse(alpha = 0.3, level = 0.9) +
+  ggtitle("Protein Consumption in European Countries (1973) - PC1 vs PC2")
+plot.final1
+```
+
+## PC2 vs PC3
+
+```{r message = FALSE, warning = FALSE}
+plot.final2 <- pca.df |>
+  ggplot(aes(x = PC2, y = PC3, color = Cluster, label = Country)) +
+  geom_text(size = 3, vjust = 1) +
+  geom_point() +
+  scale_color_manual(values = pal2) +
+  theme_minimal()+
+  stat_ellipse(alpha = 0.3, level = 0.9) +
+  ggtitle("Protein Consumption in European Countries (1973) - PC2 vs PC3")
+plot.final2
+```
+
+## PC1 vs PC3
+
+```{r message = FALSE, warning = FALSE}
+plot.final3 <- pca.df |>
+  ggplot(aes(x = PC1, y = PC3, color = Cluster, label = Country)) +
+  geom_text(size = 3, vjust = 1) +
+  geom_point() +
+  scale_color_manual(values = pal2) +
+  theme_minimal()+
+  stat_ellipse(alpha = 0.3, level = 0.9) +
+  ggtitle("Protein Consumption in European Countries (1973) - PC1 vs PC3")
+plot.final3
+```
+
+Protein consumption across European countries in 1973: pairwise comparisons across PC1, PC2, and PC3. Cluster analysis using Ward's linkage led to 6 clusters, illustrated by color. Ellipses highlight regions occupied by grouped countries - ellipse areas are arbitrary.
+
+**PC1: 41.3% of variation**
+
+PC1 weights red meat, white meat, eggs, milk, fish, starches, and total protein negatively, with cereals, nuts and oils, and fruits and vegetables weighted positively. It highlights the differences in consumption between animal sources (plus starch) and plant sources.
+$$Z_1 =  -0.318 RedMeat - 0.314 WhiMeat - 0.420 Eggs - 0.387 Milk -0.127 Fish$$
+$$+ 0.418 Cereals - 0.288 Starches + 0.418 NutsOils + 0.120 FruVeg - 0.106 Total$$
+
+**PC2: 17.4% of variation**
+
+PC2 weights red meat, white meat, eggs, milk, cereals, and total protein negatively, with fish, starches, nuts and oils, and fruits and vegetables positive. It separates countries based on pasture farming and grains vs fishing, starches, and fruits and vegetables.
+$$Z_2 =  -0.178 RedMeat - 0.118 WhiMeat - 0.082 Eggs - 0.234 Milk + 0.574 Fish$$
+$$- 0.313 Cereals + 0.410 Starches + 0.041 NutsOils + 0.349 FruVeg - 0.417 Total$$
+
+**PC3: 13.1% of variation**
+
+PC3 weights all variables negatively except for starches, eggs, and white meat. It is best highlighted in the plot for PC1 and PC3 how the 3rd PC separates the countries clustered at PC1 scores less than 1.
+$$Z_3 =  -0.381 RedMeat + 0.364 WhiMeat - 0.020 Eggs - 0.200 Milk - 0.330 Fish$$
+$$- 0.024 Cereals + 0.058 Starches - 0.248 NutsOils - 0.412 FruVeg - 0.581 Total$$
+
+Together, these 3 principle components represent 71.8% of the variation in protein consumption among European countries in 1973.
+
+# Discussion
+
+Using Ward's linkage and cutting the tree at 6 clusters results in groups that largely align with geographic regions of Europe: Scandinavia (dark blue), Central Europe (light blue), British Isles and nearby countries (green), Iberian peninsula (yellow), and two Eastern/Central European groups (orange and red).
+
+The spread along PC1 shows that Eastern European countries consume more protein through plant sources, while Western European countries lean toward meat and animal products. PC2 pulls out the group containing Portugal and Spain in the positive direction - given the loadings of PC2, this shows that those two countries consume more fish, nuts, fruits, and vegetables than other European countries. This tracks with the availability of seafood in Portugal and Spain compared to others. PC3 has the heaviest loading for total protein (-0.581) among the 3 PCs considered, and also highlights the difference between red meat (negative) and white meat (positive). The Germanys and Czechoslovakia pull away from the rest of Western Europe along PC3 positively, suggesting that those countries have a lower overall protein consumption and/or greater use of poultry over red meat. PC3 also implies that France and Greece have higher protein consumption and/or red meat than other members of their respective groups. 
+
+## Maps {.tabset}
+```{r}
+# Pull world spatial data from cshapes package
+world <- cshp(date = as.Date("1973-1-1"))
+
+# Create vector of country names
+countries <- as.character(protein.df$Country)
+
+# Rename countries to match cshape sf
+countries[7] = "German Federal Republic"
+countries[13] = "Italy/Sardinia"
+countries[18] = "Rumania"
+countries[22] = "United Kingdom"
+countries[23] = "Russia (Soviet Union)"
+countries[24] = "German Democratic Republic"
+
+# Narrow down world data to countries of interest
+Europe <- world |>
+  filter(country_name %in% countries)
+
+# Pull out cluster assignments and countries from PCA dataframe
+protein.clusters <- pca.df[,c(1,2,5)]
+protein.clusters$country_full <- countries
+protein.clusters$Total_Protein <- protein.df$Total
+
+# Add cluster assignments to spatial dataframe
+### VERSION 1: Arrange by country and add to dataframe
+# Europe <- arrange(Europe, country_name)
+# protein.clusters <- arrange(protein.clusters, country_full)
+# Europe$clusters <- protein.clusters[,2]
+
+### VERSION 2: Using for-loop (more accurate, as it checks each row's country_name before assigning the relevant cluster)
+for (i in 1:nrow(protein.clusters)){
+  row <- which(Europe$country_name == protein.clusters[i,"country_full"])
+  Europe[row,"Cluster"] <- protein.clusters[i,"Cluster"]
+}
+
+# Add abbreviated country names for better labels
+for (i in 1:nrow(protein.clusters)){
+  row <- which(Europe$country_name == protein.clusters[i,"country_full"])
+  Europe[row,"abbv"] <- protein.clusters[i,"Country"]
+}
+
+# Add total protein by country for fun
+for (i in 1:nrow(protein.clusters)){
+  row <- which(Europe$country_name == protein.clusters[i,"country_full"])
+  Europe[row,"Protein"] <- protein.clusters[i,"Total_Protein"]
+}
+
+# Add PC1 scores by country for fun
+for (i in 1:nrow(protein.clusters)){
+  row <- which(Europe$country_name == protein.clusters[i,"country_full"])
+  Europe[row,"PC1"] <- protein.clusters[i,"PC1"]
+}
+```
+
+### Cluster Groups
+```{r warning = FALSE}
+# Plot map using ggplot2
+cluster.map <- ggplot(data = Europe) +
+  # geom_sf pulls geometry from cshapes sf dataframe
+  geom_sf(aes(fill = Cluster)) +
+  # coord_sf limits axes by latitude and longitude
+  coord_sf(xlim = c(-25,50), ylim = c(35,70)) +
+  # add labels
+  geom_sf_text(aes(label = abbv), position = position_jitter(), size = 2.25) +
+  scale_fill_manual(values = pal2) +
+  # manually add USSR label (default placed label off map)
+  geom_text(x = 40, y = 55, label = "USSR", size = 2.25) +
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank())
+cluster.map
+```
+
+### PC1 Scores
+```{r warning = FALSE}
+pc1.map <- ggplot(data = Europe) +
+  geom_sf(aes(fill = PC1)) +
+  coord_sf(xlim = c(-25,50), ylim = c(35, 70)) +
+  geom_sf_text(aes(label = abbv), position = position_jitter(), size = 2.25) +
+  geom_text(x = 40, y = 55, label = "USSR", size = 2.25) +
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank())
+pc1.map
+```
+
+### Total Protein
+```{r warning = FALSE}
+protein.map <- ggplot(data = Europe) +
+  geom_sf(aes(fill = Protein)) +
+  coord_sf(xlim = c(-25,50), ylim = c(35, 70)) +
+  geom_sf_text(aes(label = abbv), position = position_jitter(), size = 2.25) +
+  geom_text(x = 40, y = 55, label = "USSR", size = 2.25) +
+  theme(axis.title.x = element_blank(), 
+        axis.title.y = element_blank())
+protein.map
+```
+
+
+
+# Reflection
+
+Clustering so far makes a lot of sense - I think I will look into the math more for the different linkages because I am curious.
+
+I went back and forth on whether or not to include total protein. I ultimately included it after the discussion in class on how the information on total protein is lost from the dataset if we standardize. It did change my groups, and I went with one extra cluster than before to get the countries in logical groups but it felt like the right move to maintain total protein as well as protein source.
+
+I tried to get a map colored with my clusters, but I could not find a way to get a map circa 1973. Any advice/packaged I could look into that could provide such a map? I think I have the use and plotting down - the following chunks are what I have so far.
+
+**Final Draft**: I found the package cshapes to pull historical map data for 1973 and created maps colored by cluster, total protein, and PC1 scores. I also expanded on my reasoning behind choosing 6 clusters, as well as a few other interpretations that needed to be reworded.
+

@@ -1,0 +1,459 @@
+---
+title: "Deterministic Interpolation: IDW"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(sf)
+library(gstat)
+library(terra)
+library(tidyterra)
+library(PNWColors)
+```
+
+```{r functions}
+# function to turn sf to raster
+sf_2_rast <-function(sfObject,variableIndex = 1){
+  # coerce sf to a data.frame
+  dfObject <- data.frame(st_coordinates(sfObject),
+                         z=as.data.frame(sfObject)[,variableIndex])
+  # coerce data.frame to SpatRaster
+  rastObject <- rast(dfObject,crs=crs(sfObject))
+  
+  names(rastObject) <- names(sfObject)[variableIndex]
+  
+  return(rastObject)
+}
+```
+
+# Data
+
+```{r}
+# load data
+
+# grid point data
+gridCA <- readRDS("data/gridCA.rds")
+# precipitation point data
+prcpCA <- readRDS("data/prcpCA.rds")
+
+# make as sf
+prcpCA_sf <- prcpCA |>
+  st_as_sf(coords = c("X", "Y")) |>
+  st_set_crs(value = 3310)
+gridCA_sf <- gridCA |>
+  st_as_sf(coords = c("X", "Y")) |>
+  st_set_crs(value = 3310)
+
+pal1 <- pnw_palette("Lake", n = nrow(prcpCA))
+
+# simple map
+prcpCA_sf |> ggplot() +
+  geom_sf(aes(fill = ANNUAL, size = ANNUAL), color = "white",
+          shape = 21, alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "Total Annual Precipitation (mm)") +
+  scale_size(guide = "none") +
+  xlab("Longitude") + ylab("Latitude") +
+  theme_minimal()
+```
+
+The original data are point data including coordinates and annual precipitation averages at 432 points across the state of California. I will use Inverse Distance Weighting (IDW) to deterministically interpolate the annual precipitation across the entire state at a resolution of 10km by 10km.
+
+# IDW Test Maps {.tabset}
+Excluding 25% of points to test for goodness of fit ($R^2$) and error (Root Mean Square Error):
+
+## p = 1 {.tabset}
+### Interpolation Map
+```{r}
+set.seed(42)
+n <- nrow(prcpCA_sf)
+rows4test <- sample(x = 1:n,size = n*0.25)
+prcpTest <- prcpCA_sf[rows4test,]
+prcpTrain <- prcpCA_sf[-rows4test,]
+
+# build the model with prcpTrain
+idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = 1))
+idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 1 raster
+prcp_rast <- sf_2_rast(idw_test_sf)
+# prcp_p1_rast
+
+# precipitation plot p = 1
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 1") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+```
+
+
+### Goodness of Fit
+```{r}
+# assess skill
+# observations
+obs <- prcpTest$ANNUAL
+# predictions
+preds <- terra::extract(prcp_rast, prcpTest) |>
+  pull(var1.pred)
+# R^2
+rsq <- cor(obs, preds, use="complete.obs")^2
+rsq
+# root mean square error
+rmse <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+rmse
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds),
+             na.rm = TRUE) + 
+  coord_fixed(ratio = 1,
+              xlim = range(preds, obs),
+              ylim = range(preds,obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Annual Precipitation (mm)",
+       subtitle = "IDW Fit: p = 1")
+```
+
+
+## p = 2 {.tabset}
+### Interpolation Map
+```{r}
+# build the model with prcpTrain
+idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = 2))
+idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 2 raster
+prcp_rast <- sf_2_rast(idw_test_sf)
+# prcp_p1_rast
+
+# precipitation plot p = 2
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 2") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+```
+
+### Goodness of Fit
+```{r}
+# assess skill
+# observations
+obs <- prcpTest$ANNUAL
+# predictions
+preds <- terra::extract(prcp_rast, prcpTest) |>
+  pull(var1.pred)
+# R^2
+rsq <- cor(obs, preds, use="complete.obs")^2
+rsq
+# root mean square error
+rmse <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+rmse
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds),
+             na.rm = TRUE) + 
+  coord_fixed(ratio = 1,
+              xlim = range(preds, obs),
+              ylim = range(preds,obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Annual Precipitation (mm)",
+       subtitle = "IDW Fit: p = 2")
+```
+
+## p = 3 {.tabset}
+### Interpolation Map
+```{r}
+# build the model with prcpTrain
+idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = 3))
+idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 3 raster
+prcp_rast <- sf_2_rast(idw_test_sf)
+# prcp_p1_rast
+
+# precipitation plot p = 3
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 3") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+```
+
+### Goodness of Fit
+```{r}
+# assess skill
+# observations
+obs <- prcpTest$ANNUAL
+# predictions
+preds <- terra::extract(prcp_rast, prcpTest) |>
+  pull(var1.pred)
+# R^2
+rsq <- cor(obs, preds, use="complete.obs")^2
+rsq
+# root mean square error
+rmse <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+rmse
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds),
+             na.rm = TRUE) + 
+  coord_fixed(ratio = 1,
+              xlim = range(preds, obs),
+              ylim = range(preds,obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Annual Precipitation (mm)",
+       subtitle = "IDW Fit: p = 3")
+```
+
+
+## p = 4 {.tabset}
+### Interpolation Map
+```{r}
+# build the model with prcpTrain
+idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = 4))
+idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 4 raster
+prcp_rast <- sf_2_rast(idw_test_sf)
+# prcp_p1_rast
+
+# precipitation plot p = 4
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 4") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+```
+
+### Goodness of Fit
+```{r}
+# assess skill
+# observations
+obs <- prcpTest$ANNUAL
+# predictions
+preds <- terra::extract(prcp_rast, prcpTest) |>
+  pull(var1.pred)
+# R^2
+rsq <- cor(obs, preds, use="complete.obs")^2
+rsq
+# root mean square error
+rmse <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+rmse
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds),
+             na.rm = TRUE) + 
+  coord_fixed(ratio = 1,
+              xlim = range(preds, obs),
+              ylim = range(preds,obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Annual Precipitation (mm)",
+       subtitle = "IDW Fit: p = 4")
+```
+
+
+## p = 5 {.tabset}
+### Interpolation Map
+```{r debug.level = 0}
+# build the model with prcpTrain
+idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = 5))
+idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 5 raster
+prcp_rast <- sf_2_rast(idw_test_sf)
+# prcp_p1_rast
+
+# precipitation plot p = 5
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 5") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_equal() +
+  theme_minimal()
+```
+
+### Goodness of Fit
+```{r}
+# assess skill
+# observations
+obs <- prcpTest$ANNUAL
+# predictions
+preds <- terra::extract(prcp_rast, prcpTest) |>
+  pull(var1.pred)
+# R^2
+rsq <- cor(obs, preds, use="complete.obs")^2
+rsq
+# root mean square error
+rmse <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+rmse
+
+ggplot() +
+  geom_abline(slope=1,intercept = 0) +
+  geom_point(aes(x = obs, y = preds),
+             na.rm = TRUE) + 
+  coord_fixed(ratio = 1,
+              xlim = range(preds, obs),
+              ylim = range(preds,obs)) +
+  labs(x="Observed Values",
+       y="Predicted Values",
+       title="Annual Precipitation (mm)",
+       subtitle = "IDW Fit: p = 5")
+```
+
+# Model Optimization
+$R^2$ is maximized and RMSE is minimized at around p = 4. Calculating both for p values from 1 to 5 at increments of 0.1 shows that both plateau close to p = 4. 
+
+```{r }
+p_vec <- seq(1, 5, by = 0.1)
+
+# calculate rsq and rmse for each p in p_vec
+for (i in 1:length(p_vec)) {idw_test <- gstat(formula=ANNUAL~1, 
+                      locations = prcpTrain,
+                      set=list(idp = p_vec[i]))
+  idw_test_sf <- predict(idw_test, gridCA_sf, debug.level = 0)
+# rasterize
+  prcp_rast <- sf_2_rast(idw_test_sf)
+# observations
+  obs <- prcpTest$ANNUAL
+# predictions
+  preds <- terra::extract(prcp_rast, prcpTest) |>
+    pull(var1.pred)
+# R^2
+  rsq[i] <- cor(obs, preds, use="complete.obs")^2
+# root mean square error
+  rmse[i] <- sqrt(mean((preds - obs)^2, na.rm=TRUE))
+}
+
+# save as dataframe
+idw_fit <- as.data.frame(cbind(p_vec, rsq, rmse))
+```
+
+```{r}
+#scaling coefficient for dual-axis plot
+coeff <- 425
+
+ggplot(data = idw_fit) +
+  geom_point(aes(x = p_vec, y = rsq), col = "red") + 
+  geom_point(aes(x = p_vec, y = rmse / coeff), col = "orchid4") + 
+  scale_y_continuous(sec.axis = sec_axis(~.*coeff, name = "RMSE")) +
+  labs(x="p",
+       y="R-squared",
+       title="Annual Precipitation",
+       subtitle = "IDW Fit") 
+```
+
+```{r}
+rsq_max <- subset(idw_fit, rsq == max(rsq))
+rsq_max
+rmse_min <- subset(idw_fit, rmse == min(rmse))
+rmse_min
+```
+
+I chose to map the whole dataset with p = 3.8, since it has the best fit  ($R^2$ = 0.8163) and the second-lowest error (RMSE = 198.53) of the values tried.
+
+# Final Map
+
+```{r}
+idw_prcp <- gstat(formula=ANNUAL~1, 
+                      locations = prcpCA_sf,
+                      set=list(idp = 3.9))
+idw_prcp_sf <- predict(idw_prcp, gridCA_sf, debug.level = 0)
+
+# annual precipitation p = 3.9 raster
+prcp_rast <- sf_2_rast(idw_prcp_sf)
+
+# precipitation plot p = 3.9
+ggplot() +
+  geom_raster(data = prcp_rast,
+              mapping = aes(x = x, y = y, 
+                            fill = var1.pred), alpha = 0.8) +
+  geom_sf(data = prcpCA_sf, aes(fill = ANNUAL), color = "white",
+          shape = 21, alpha = 0.8) +
+  scale_fill_gradientn(colors = (pal1),
+                        name = "Annual Precip (mm)",
+                        na.value = "transparent") +
+  labs(title = "IDW-Modeled Annual Precipitation in California",
+       subtitle = "IDW: p = 3.9") +
+  scale_size(guide = "none") +
+  xlab("Easting (m)") +
+  ylab("Northing (m)") +
+  coord_sf() +
+  theme_minimal()
+```
+
+Map of deterministically interpolated annual precipitation across California. Known values are overlayed as points. Unsurprisingly, the southern half of California has very low annual precipitation, especially away from the coast (~ 500mm annually or less). Some stretches along the southern coast reach up to 1000mm. Once the Sierra Nevadas begin and mountains begin to catch rainclouds from the ocean, precipitation increases massively. Precipitation is highest in the northern coast near San Francisco and the Oregon border, where the California coast bends and begins to catch much more moisture from the Pacific. East of the mountains that catch those clouds, however, precipitation levels are as low as inland southern California.

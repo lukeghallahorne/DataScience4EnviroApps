@@ -1,7 +1,13 @@
 ---
+<<<<<<< HEAD
 title: "A1 Bootstrap"
 author: "Luke Ghallahorne"
 date: "`r Sys.Date()`"
+=======
+title: "Machine Learning - Bootstrap"
+author: "Luke Ghallahorne"
+date: "2025-01-15"
+>>>>>>> f5ceacf00a819847bf262c332abf800d2dae7d2e
 output: 
   html_document:
     toc: true

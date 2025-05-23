@@ -1,0 +1,189 @@
+---
+title: "Mt Baker Map"
+author: "Luke Ghallahorne"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: yes
+    theme: flatly
+    code_folding: show
+editor_options: 
+  markdown: 
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning = FALSE, message = FALSE}
+library(sf)
+# rast()
+# st_read()
+library(terra)
+library(tidyverse)
+# ggplot()
+library(tidyterra)
+# geom_spatraster()
+# hypso.colors
+library(ggnewscale)
+library(metR)
+# geom_text_contour()
+library(PNWColors)
+```
+
+```{r}
+# Loading spatial data
+mtbDEM <- rast("Data/mtbDEM.tif")
+mtbDEM
+```
+
+```{r}
+# Raster plot 1
+mtbDEM_df <- as.data.frame(mtbDEM, xy = TRUE)
+ggplot() +
+  geom_raster(data = mtbDEM_df, mapping = aes(x = x, y = y,
+                                              fill = elev)) +
+  scale_fill_gradientn(colours = terrain.colors(100)) +
+  labs(x = "Easting (m)", y = "Northing (m)") +
+  coord_equal()
+```
+
+```{r}
+# Raster plot using tidyterra
+# ?hypso.colors
+
+ggplot() +
+  geom_spatraster(data = mtbDEM) +
+  scale_fill_hypso_c(palette = "colombia_hypso") +
+  labs(x = "Easting (m)", y = "Northing (m)") +
+  coord_sf(datum = 32610)
+```
+
+```{r}
+# load hillshade data file
+mtbHill <- rast("Data/mtbHill.tif")
+mtbHill
+```
+
+```{r}
+# Hillshade plot
+ggplot() +
+  geom_spatraster(data = mtbHill)
+```
+
+
+```{r}
+# Combining elevation and hillshade layers into plot
+p1 <- ggplot() +
+  geom_spatraster(data = mtbHill) +
+  scale_fill_gradientn(colors = gray.colors(100,
+                                            start = 0.1,
+                                            end = 0.9), guide = "none") +
+  new_scale_fill() +
+  geom_spatraster(data = mtbDEM) +
+  scale_fill_hypso_c(name = "Elevation (m)", 
+                     palette = "colombia_hypso",alpha = 0.6) +
+  theme_minimal()
+p1
+```
+
+```{r}
+# Load shape file for chair lifts
+# st_read from sf package - read simple features or layers from file
+chairs <- st_read("Data/mtbChairLines.shp")
+```
+
+```{r}
+# adding chairs to plot
+
+p1 + geom_sf(data=chairs)
+```
+
+```{r}
+# Load shape file for chair lifts
+chairs <- st_read("Data/mtbChairLines.shp")
+chairs
+
+chairs$id <- paste("Chair", as.character(chairs$id))
+
+chair_mid <- st_centroid(chairs)
+
+chair_col <- rep("blue2", 10)
+chair_col[3] <- "green4"
+chair_col
+
+chair_col <- pnw_palette("Sunset2", 8)
+chair_col
+```
+
+```{r}
+# Loading buildings data
+buildings <- read.csv("Data/mtbLodges.csv")
+buildings
+
+utm10nCRS <- st_crs(mtbDEM)
+bldg_sf <- st_as_sf(buildings, coords = c("X", "Y"), crs = utm10nCRS)
+```
+
+
+
+```{r}
+# Mt Baker Map
+p1 <- ggplot() +
+  # Hillshade data
+  geom_spatraster(data = mtbHill) +
+  scale_fill_gradientn(colors = gray.colors(100,
+                                            start = 0.1,
+                                            end = 0.9), guide = "none") +
+  
+  # Elevation data
+  new_scale_fill() +
+  geom_spatraster(data = mtbDEM) +
+  scale_fill_hypso_c(name = "Elevation (m)", 
+                     palette = "colombia_hypso",alpha = 0.6) +
+  
+  # Contours
+  geom_spatraster_contour(data = mtbDEM, binwidth = 100, alpha = 0.75) +
+  geom_text_contour(data = mtbDEM, binwidth = 100, 
+                    aes(x = x, y = y, z = elev),
+                    check_overlap = TRUE,
+                    skip = 0,
+                    alpha = 0.75, 
+                    size = 2.5) +
+  
+
+  
+  # Chair Lifts
+  geom_sf(data = chairs, aes(color = factor(id)), show.legend = FALSE) +
+  scale_color_manual(values = chair_col) +
+  
+  geom_sf_label(data = chair_mid,
+                aes(label = id, color = factor(id)),
+                show.legend = FALSE, 
+                alpha = 0.85,
+                size = 2.5) +
+
+  # Buildings
+  geom_sf(data = bldg_sf, size = 3) +
+  geom_sf_label(data = bldg_sf, aes(label = id,vjust = -0.4), 
+                alpha = 0.85) +
+  
+  # Margins and Theme
+  scale_x_continuous(limits = c(596210.7, 599350.7), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(5411132, 5413177), expand = c(0, 0)) +
+  labs(title = "Mt. Baker Map") +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(hjust = 0.5),
+        axis.title = element_blank()) 
+  
+p1
+```
+
+
+
+
